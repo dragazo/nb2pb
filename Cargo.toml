@@ -1,0 +1,17 @@
+[package]
+name = "netsblox-to-pyblox"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "netsblox_to_pyblox"
+path = "src/lib.rs"
+
+[[bin]]
+name = "netsblox_to_pyblox"
+path = "src/main.rs"
+
+[dependencies]
+netsblox-ast = { path = "../netsblox-ast/" }
