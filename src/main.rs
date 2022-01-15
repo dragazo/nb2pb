@@ -1,6 +1,3 @@
-use std::fs::File;
-use std::io::BufReader;
-
 use netsblox_to_pyblox::*;
 
 fn main() {
@@ -12,9 +9,9 @@ fn main() {
 
     let input = &args[1];
     if input.ends_with(".xml") {
-        let xml = BufReader::new(File::open(input).expect("failed to open file"));
-        let res = translate(xml).expect("failed to translate");
-        println!("{}", res);
+        let xml = std::fs::read_to_string(input).expect("failed to read file");
+        let res = translate(&xml).expect("failed to translate");
+        println!("{}", res.1);
     }
     else {
         eprintln!("unknown input file type");

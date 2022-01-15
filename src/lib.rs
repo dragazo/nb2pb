@@ -1,15 +1,19 @@
 #![forbid(unsafe_code)]
 
-use std::io::Read;
 use std::fmt::Write;
 use std::rc::Rc;
+use std::iter;
+
+#[macro_use] extern crate serde_json;
+
 pub use netsblox_ast::Error as ParseError;
 use netsblox_ast::{*, util::*};
 
 #[derive(Debug)]
 pub enum TranslateError {
     ParseError(ParseError),
-    NoRoles, MultipleRoles,
+    MultipleRoles,
+    NoRoles,
 
     UnsupportedBlock(&'static str),
 }
@@ -18,7 +22,7 @@ impl From<ParseError> for TranslateError { fn from(e: ParseError) -> Self { Self
 macro_rules! fmt_comment {
     ($comment:expr) => {
         match $comment.as_ref() {
-            Some(v) => format!(" # {}", v),
+            Some(v) => format!(" # {}", v.replace('\n', " -- ")),
             None => "".into(),
         }
     }
@@ -40,6 +44,14 @@ fn boolify(val: (String, Type)) -> Result<String, TranslateError> {
         Type::Bool => val.0,
         _ => format!("jsbool({})", val.0),
     })
+}
+
+fn translate_var(var: &VariableRef) -> String {
+    match &var.location {
+        VarLocation::Local => var.trans_name.clone(),
+        VarLocation::Field => format!("self.{}", var.trans_name),
+        VarLocation::Global => format!("globals()['{}']", var.trans_name),
+    }
 }
 
 #[derive(Default)]
@@ -68,11 +80,7 @@ impl ScriptInfo {
     fn translate_expr(&mut self, expr: &Expr) -> Result<(String, Type), TranslateError> {
         Ok(match expr {
             Expr::Value(v) => self.translate_value(v)?,
-            Expr::Variable { var, .. } => match &var.location {
-                VarLocation::Local => (var.trans_name.clone(), Type::Unknown),
-                VarLocation::Field => (format!("self.{}", var.trans_name), Type::Unknown),
-                VarLocation::Global => (format!("globals()['{}']", var.trans_name), Type::Unknown),
-            }
+            Expr::Variable { var, .. } => (translate_var(var), Type::Unknown),
 
             Expr::MakeList { values, .. } => {
                 let mut items = Vec::with_capacity(values.len());
@@ -119,15 +127,20 @@ impl ScriptInfo {
                 Stmt::Assign { vars, value, comment } => {
                     let mut res = String::new();
                     for var in vars.iter() {
-                        match &var.location {
-                            VarLocation::Local => write!(&mut res, "{} = ", var.trans_name).unwrap(),
-                            VarLocation::Field => write!(&mut res, "self.{} = ", var.trans_name).unwrap(),
-                            VarLocation::Global => write!(&mut res, "globals()['{}'] = ", var.trans_name).unwrap(),
-                        }
+                        write!(&mut res, "{} = ", translate_var(var)).unwrap();
                     }
                     write!(&mut res, "{}{}", self.translate_expr(value)?.0, fmt_comment!(comment)).unwrap();
                     lines.push(res);
                 }
+                Stmt::AddAssign { var, value, comment } => {
+                    lines.push(format!("{} += {}{}", translate_var(var), numerify(self.translate_expr(value)?)?, fmt_comment!(comment)));
+                }
+
+                Stmt::Warp { stmts, comment } => {
+                    let code = self.translate_stmts(stmts)?;
+                    lines.push(format!("with Warp():{}\n{}", fmt_comment!(comment), indent(&code)));
+                }
+
                 Stmt::If { condition, then, comment } => {
                     let condition = boolify(self.translate_expr(condition)?)?;
                     let then = self.translate_stmts(then)?;
@@ -160,22 +173,39 @@ impl ProjectInfo {
 struct SpriteInfo {
     name: String,
     scripts: Vec<String>,
+    fields: Vec<(String, String)>,
+    costumes: Vec<(String, String)>,
 }
 impl SpriteInfo {
     fn new(name: String) -> Self {
-        Self { name, scripts: vec![] }
+        Self { name, scripts: vec![], fields: vec![], costumes: vec![] }
     }
     fn translate_hat(&mut self, hat: &Hat) -> Result<String, TranslateError> {
         Ok(match hat {
-            Hat::OnFlag { comment } => format!("@onstart{}\ndef my_onstart_{}(self):\n", fmt_comment!(comment), self.scripts.len() + 1),
+            Hat::OnFlag { comment } => format!("@onstart(){}\ndef my_onstart_{}(self):\n", fmt_comment!(comment), self.scripts.len() + 1),
             Hat::OnKey { key, comment } => format!("@onkey('{}'){}\ndef my_onkey_{}(self):\n", key, fmt_comment!(comment), self.scripts.len() + 1),
+            Hat::MouseDown { comment } => format!("@onclick(when = 'down'){}\ndef my_onclick_{}(self):\n", fmt_comment!(comment), self.scripts.len() + 1),
+            Hat::MouseUp { comment } => format!("@onclick(when = 'up'){}\ndef my_onclick_{}(self):\n", fmt_comment!(comment), self.scripts.len() + 1),
+            Hat::MouseEnter { .. } => return Err(TranslateError::UnsupportedBlock("mouseenter interactions are not currently supported")),
+            Hat::MouseLeave { .. } => return Err(TranslateError::UnsupportedBlock("mouseleave interactions are not currently supported")),
+            Hat::ScrollUp { .. } => return Err(TranslateError::UnsupportedBlock("scrollup interactions are not currently supported")),
+            Hat::ScrollDown { .. } => return Err(TranslateError::UnsupportedBlock("scrolldown interactions are not currently supported")),
+            Hat::Dropped { .. } => return Err(TranslateError::UnsupportedBlock("drop interactions are not currently supported")),
+            Hat::Stopped { .. } => return Err(TranslateError::UnsupportedBlock("stop interactions are not currently supported")),
+            Hat::Message { msg, fields, comment } => {
+                let params = iter::once("self").chain(fields.iter().map(String::as_str)).chain(iter::once("**kwargs"));
+                format!("@nb.on_message('{}'){}\ndef my_on_message_{}({}):\n", escape(msg), fmt_comment!(comment), self.scripts.len() + 1, Punctuated(params, ", "))
+            }
         })
     }
 }
 
-pub fn translate<R: Read>(source: R) -> Result<String, TranslateError> {
+/// Translates NetsBlox project XML into PyBlox project JSON
+///
+/// On success, returns the project name and project json content as a tuple.
+pub fn translate(source: &str) -> Result<(String, String), TranslateError> {
     let parser = ParserBuilder::default().optimize(true).name_transformer(Rc::new(&c_ident)).build().unwrap();
-    let project = parser.parse(source)?;
+    let project = parser.parse(&mut source.as_bytes())?;
 
     let role = match project.roles.as_slice() {
         [x] => x,
@@ -187,6 +217,17 @@ pub fn translate<R: Read>(source: R) -> Result<String, TranslateError> {
 
     for sprite in role.sprites.iter() {
         let mut sprite_info = SpriteInfo::new(sprite.name.clone());
+        for costume in sprite.costumes.iter() {
+            let content = match &costume.value {
+                Value::String(s) => s,
+                _ => panic!(), // the parser lib would never do this
+            };
+            sprite_info.costumes.push((costume.trans_name.clone(), content.clone()));
+        }
+        for field in sprite.fields.iter() {
+            let value = ScriptInfo::default().translate_value(&field.value)?.0;
+            sprite_info.fields.push((field.trans_name.clone(), value));
+        }
         for script in sprite.scripts.iter() {
             let func_def = match script.hat.as_ref() {
                 Some(x) => sprite_info.translate_hat(x)?,
@@ -199,17 +240,56 @@ pub fn translate<R: Read>(source: R) -> Result<String, TranslateError> {
         project_info.sprites.push(sprite_info);
     }
 
-    // ---- remove everythng below this line ------- //
+    let mut editors = vec![];
+
+    let mut content = String::new();
     for global in role.globals.iter() {
         let value = ScriptInfo::default().translate_value(&global.value)?.0;
-        println!("{} = {}", global.trans_name, value);
+        writeln!(&mut content, "{} = {}", global.trans_name, value).unwrap();
     }
-    if !role.globals.is_empty() { println!() }
-    for sprite in project_info.sprites.iter() {
-        println!("class {}:\n", sprite.name);
+    editors.push(json!({
+        "type": "global",
+        "name": "global",
+        "value": content,
+    }));
+
+    for (i, sprite) in project_info.sprites.iter().enumerate() {
+        let mut content = String::new();
+
+        for (field, value) in sprite.fields.iter() {
+            writeln!(&mut content, "{} = {}", field, value).unwrap();
+        }
+        if !sprite.fields.is_empty() { writeln!(&mut content).unwrap() }
         for script in sprite.scripts.iter() {
-            println!("{}\n", indent(&script));
+            writeln!(&mut content, "{}\n", &script).unwrap();
+        }
+
+        editors.push(json!({
+            "type": if i == 0 { "stage" } else { "turtle" },
+            "name": sprite.name,
+            "value": content,
+        }));
+    }
+
+    let mut images = serde_json::Map::new();
+    for sprite in project_info.sprites.iter() {
+        for (costume, content) in sprite.costumes.iter() {
+            images.insert(format!("{}_cst_{}", sprite.name, costume), json!(content.clone()));
         }
     }
-    panic!();
+
+    let res = json!({
+        "block_sources": [ "netsblox://assets/default-blocks.json" ],
+        "blocks": {
+            "global": [],
+            "stage": [],
+            "turtle": [],
+        },
+        "show_blocks": true,
+        "imports": [],
+        "editors": editors,
+        "images": images,
+    });
+
+    Ok((project_info.name, res.to_string()))
 }

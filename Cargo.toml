@@ -15,3 +15,5 @@ path = "src/main.rs"
 
 [dependencies]
 netsblox-ast = { path = "../netsblox-ast/" }
+serde = "1.0.133"
+serde_json = "1.0.74"
