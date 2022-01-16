@@ -175,10 +175,27 @@ struct SpriteInfo {
     scripts: Vec<String>,
     fields: Vec<(String, String)>,
     costumes: Vec<(String, String)>,
+
+    active_costume: Option<usize>,
+    color: (u8, u8, u8),
+    pos: (f64, f64),
+    heading: f64,
+    scale: f64,
 }
 impl SpriteInfo {
-    fn new(name: String) -> Self {
-        Self { name, scripts: vec![], fields: vec![], costumes: vec![] }
+    fn new(src: &Sprite) -> Self {
+        Self {
+            name: src.trans_name.clone(),
+            scripts: vec![],
+            fields: vec![],
+            costumes: vec![],
+
+            active_costume: src.active_costume,
+            color: src.color,
+            pos: src.pos,
+            heading: src.heading,
+            scale: src.scale,
+        }
     }
     fn translate_hat(&mut self, hat: &Hat) -> Result<String, TranslateError> {
         Ok(match hat {
@@ -216,7 +233,7 @@ pub fn translate(source: &str) -> Result<(String, String), TranslateError> {
     let mut project_info = ProjectInfo::new(project.name.clone());
 
     for sprite in role.sprites.iter() {
-        let mut sprite_info = SpriteInfo::new(sprite.name.clone());
+        let mut sprite_info = SpriteInfo::new(sprite);
         for costume in sprite.costumes.iter() {
             let content = match &costume.value {
                 Value::String(s) => s,
@@ -256,12 +273,35 @@ pub fn translate(source: &str) -> Result<(String, String), TranslateError> {
     for (i, sprite) in project_info.sprites.iter().enumerate() {
         let mut content = String::new();
 
+        if !sprite.costumes.is_empty() {
+            content += "costumes = {\n";
+            for (costume, _) in sprite.costumes.iter() {
+                writeln!(&mut content, "    '{}': images.{}_cst_{},", costume, sprite.name, costume).unwrap();
+            }
+            content += "}\n\n";
+        }
+
         for (field, value) in sprite.fields.iter() {
             writeln!(&mut content, "{} = {}", field, value).unwrap();
         }
-        if !sprite.fields.is_empty() { writeln!(&mut content).unwrap() }
+        if !sprite.fields.is_empty() { content.push('\n'); }
+
+        content += "def __init__(self):\n";
+        if i != 0 { // don't generate these for stage
+            writeln!(&mut content, "    self.pos = ({}, {})", sprite.pos.0, sprite.pos.1).unwrap();
+            writeln!(&mut content, "    self.heading = {}", sprite.heading).unwrap();
+            writeln!(&mut content, "    self.pen_color = ({}, {}, {})", sprite.color.0, sprite.color.1, sprite.color.2).unwrap();
+            writeln!(&mut content, "    self.scale = {}", sprite.scale).unwrap();
+        }
+        match sprite.active_costume {
+            Some(idx) => writeln!(&mut content, "    self.costume = self.costumes['{}']", sprite.costumes[idx].0).unwrap(),
+            None => content += "    self.costume = None\n",
+        }
+        content.push('\n');
+
         for script in sprite.scripts.iter() {
-            writeln!(&mut content, "{}\n", &script).unwrap();
+            content += script;
+            content.push('\n');
         }
 
         editors.push(json!({
