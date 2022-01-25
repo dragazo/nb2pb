@@ -70,6 +70,25 @@ impl ScriptInfo {
             }
         })
     }
+    fn translate_rpc(&mut self, service: &str, rpc: &str, args: &[(String, Expr)], comment: Option<&str>) -> Result<String, TranslateError> {
+        let mut trans_args = Vec::with_capacity(args.len());
+        for arg in args.iter() {
+            trans_args.push(format!("'{}': {}", escape(&arg.0), self.translate_expr(&arg.1)?.0));
+        }
+        Ok(format!("nb.call('{}', '{}', {{ {} }}){}", escape(service), escape(rpc), Punctuated(trans_args.iter(), ", "), fmt_comment!(comment)))
+    }
+    fn translate_fn_call(&mut self, function: &FnRef, args: &[Expr], comment: Option<&str>) -> Result<String, TranslateError> {
+        let mut trans_args = Vec::with_capacity(args.len());
+        for arg in args.iter() {
+            trans_args.push(wrap(self.translate_expr(arg)?));
+        }
+        let comment = fmt_comment!(comment);
+
+        Ok(match function.location {
+            FnLocation::Global => format!("{}(self, {}){}", function.trans_name, Punctuated(trans_args.iter(), ", "), comment),
+            FnLocation::Method => format!("self.{}({}){}", function.trans_name, Punctuated(trans_args.iter(), ", "), comment),
+        })
+    }
     fn translate_expr(&mut self, expr: &Expr) -> Result<(String, Type), TranslateError> {
         Ok(match expr {
             Expr::Value(v) => self.translate_value(v)?,
@@ -107,6 +126,9 @@ impl ScriptInfo {
             Expr::RandInclusive { a, b, .. } => (format!("snap.rand({}, {})", self.translate_expr(a)?.0, self.translate_expr(b)?.0), Type::Wrapped), // python impl returns wrapped
 
             Expr::Listlen { value, .. } => (format!("len({})", self.translate_expr(value)?.0), Type::Unknown), // builtin __len__ can't be overloaded to return wrapped
+
+            Expr::CallRpc { service, rpc, args, .. } => (self.translate_rpc(service, rpc, args, None)?, Type::Unknown),
+            Expr::CallFn { function, args, .. } => (self.translate_fn_call(function, args, None)?, Type::Wrapped),
 
             x => panic!("{:#?}", x),
         })
@@ -150,6 +172,8 @@ impl ScriptInfo {
                     };
                     lines.push(format!("self.costume = {}{}", costume, fmt_comment!(comment)));
                 }
+                Stmt::RunRpc { service, rpc, args, comment } => lines.push(self.translate_rpc(service, rpc, args, comment.as_deref())?),
+                Stmt::RunFn { function, args, comment } => lines.push(self.translate_fn_call(function, args, comment.as_deref())?),
                 Stmt::Forward { distance, comment } => lines.push(format!("self.forward({}){}", self.translate_expr(distance)?.0, fmt_comment!(comment))),
                 Stmt::TurnRight { angle, comment } => lines.push(format!("self.turn_right({}){}", self.translate_expr(angle)?.0, fmt_comment!(comment))),
                 Stmt::TurnLeft { angle, comment } => lines.push(format!("self.turn_left({}){}", self.translate_expr(angle)?.0, fmt_comment!(comment))),
