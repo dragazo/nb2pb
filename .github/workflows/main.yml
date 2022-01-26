@@ -36,7 +36,7 @@ jobs:
           path: target/wheels/
   build-manylinux2010:
     runs-on: ubuntu-latest
-    container: konstin2/maturin:master
+    container: konstin2/maturin:latest
     steps:
       - name: checkout
         uses: actions/checkout@v1
