@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+mod python;
+
 use std::fmt::Write;
 use std::rc::Rc;
 use std::iter;

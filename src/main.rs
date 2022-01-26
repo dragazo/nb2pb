@@ -1,4 +1,4 @@
-use netsblox_to_pyblox::*;
+use nb2pb::*;
 
 fn main() {
     let args: Vec<_> = std::env::args().collect();

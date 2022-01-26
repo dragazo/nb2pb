@@ -1,19 +1,21 @@
 [package]
-name = "netsblox-to-pyblox"
+name = "nb2pb"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-name = "netsblox_to_pyblox"
+name = "nb2pb"
 path = "src/lib.rs"
+crate-type = ["lib", "cdylib"]
 
 [[bin]]
-name = "netsblox_to_pyblox"
+name = "nb2pb"
 path = "src/main.rs"
 
 [dependencies]
-netsblox-ast = { path = "../netsblox-ast/" }
+netsblox-ast = "0.1.0"
 serde = "1.0.133"
 serde_json = "1.0.74"
+pyo3 = { version = "0.15.1", features = ["extension-module"] }
