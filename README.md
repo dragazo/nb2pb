@@ -1,14 +1,16 @@
 ## Publishing to PyPi
 
-`pyo3` and `maturin` create native python modules, which means you need to build on each platform you want to target.
-Docker allows us to do all of this on one (physical) machine.
-The following instructions assume you are on a linux machine and have `docker` installed.
+Perform the following steps to generate wheels for various platforms and upload all of them with `twine upload ...`.
+Note that some of these steps produce multiple versions of source distributions - the version uploaded to pypi should not matter.
 
-- Build for linux
+- Build for Linux, Windows, and MacOS (`x86_64`)
+
+    Manually run the main github CI action (will be automated once the project is in a more stable state)
+
+- Build for MacOS (`M1`)
+
+    Unfortunately must actually be performed on an M1 mac machine.
 
     ```sh
-    sudo docker run --rm -v $(pwd):/io konstin2/maturin build --release
+    maturin build --release
     ```
-
-- Build for windows
-- Build for mac
