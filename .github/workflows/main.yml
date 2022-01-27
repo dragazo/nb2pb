@@ -1,15 +1,15 @@
 name: CI
 
 on:
-  # just run manually for now
   workflow_dispatch:
 
-# source: https://github.com/jjfiv/fastrank/blob/master/.github/workflows/main.yml
 jobs:
   build-mac-win:
     strategy:
+      fail-fast: false
       matrix:
         platform: [ macOS-latest, windows-latest ]
+        python-version: [ '3.6', '3.7', '3.8', '3.9', '3.10' ]
     runs-on: ${{ matrix.platform }}
     steps:
       - name: checkout
@@ -17,13 +17,13 @@ jobs:
       - name: Setup Rust environment
         uses: actions-rs/toolchain@v1
         with:
-            profile: minimal
-            toolchain: stable
-            override: true
+          profile: minimal
+          toolchain: stable
+          override: true
       - name: Setup Python environment
         uses: actions/setup-python@v2.1.4
         with:
-          python-version: 3.6
+          python-version: ${{ matrix.python-version }}
       - name: maturin build --release
         run: |
           pip install --upgrade pip
@@ -32,8 +32,16 @@ jobs:
       - uses: actions/upload-artifact@v1
         name: upload-wheel
         with:
-          name: wheel-${{ matrix.platform }}
+          name: wheel-${{ matrix.platform }}-${{ matrix.python-version }}
           path: target/wheels/
+      - name: Publish to PyPI
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+        run: |
+          pip install --upgrade twine
+          twine upload --skip-existing target/wheels/*
   build-manylinux2010:
     runs-on: ubuntu-latest
     container: konstin2/maturin:latest
@@ -52,3 +60,11 @@ jobs:
         with:
           name: wheel-manylinux2010
           path: target/wheels/
+      - name: Publish to PyPI
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+        run: |
+          pip install --upgrade twine
+          twine upload --skip-existing target/wheels/*
