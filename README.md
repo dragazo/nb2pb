@@ -1,16 +1,22 @@
-## Publishing to PyPi
+# `nb2pb`
 
-Perform the following steps to generate wheels for various platforms and upload all of them with `twine upload ...`.
-Note that some of these steps produce multiple versions of source distributions - the version uploaded to pypi should not matter.
+[NetsBlox](https://netsblox.org/) is an educational block-based programming environment (based on [Snap!](https://snap.berkeley.edu/)) which has a focus on advanced CS topics such as distributed computing, cybersecurity, and the internet of things.
+[PyBlox](https://github.com/dragazo/PyBlox) is an educational Python environment which supports most of the same features as NetsBlox, but which has students program in native (unrestricted) Python rather than the block-based language.
+`nb2pb` is a rust crate that allows for the compilation of NetsBlox (`nb`) project files into PyBlox (`pb`) project files.
 
-- Build for Linux, Windows, and MacOS (`x86_64`)
+## How to Use
 
-    Manually run the main github CI action (will be automated once the project is in a more stable state)
+In addition to being a native rust crate available on crates.io, `nb2pb` also has (simplified) [Python bindings](https://pypi.org/project/nb2pb/), which are used by PyBlox.
+As the python bindings are our main interest, they will be kept up to date as the rust crate evolves.
 
-- Build for MacOS (`M1`)
+## Installation
 
-    Unfortunately must actually be performed on an M1 mac machine.
+To use `nb2pb` as a Python package, you can simply install it through pip.
 
-    ```sh
-    maturin build --release
-    ```
+```sh
+pip install nb2pb
+```
+
+We build wheels for several operating systems and versions of python (`>=3.6`).
+However, if there is not a wheel for your platform, pip will have to compile the rust crate from source, which will require installing [`cargo`](https://doc.rust-lang.org/cargo/getting-started/installation.html).
+If this is the case, feel free to [submit an issue](https://github.com/dragazo/nb2pb/issues/new) including your operating system and processor architecture, and we can see if your system can be officially supported (without needing to be compiled by users) in the future.
