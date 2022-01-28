@@ -1,3 +1,22 @@
 [build-system]
 requires = ["maturin>=0.12,<0.13"]
 build-backend = "maturin"
+
+[project]
+name = "nb2pb"
+requires-python = ">=3.6"
+dependencies = ["cffi"]
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "Intended Audience :: Developers",
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: Compilers",
+]
+
+[project.urls]
+"Source Code" = "https://github.com/dragazo/nb2pb"
+Issues = "https://github.com/dragazo/nb2pb/issues"

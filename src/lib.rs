@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+#[cfg(pyo3)]
 mod python;
 
 use std::fmt::Write;
