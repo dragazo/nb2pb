@@ -4,6 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "nb2pb"
+version = "0.1.1"
 requires-python = ">=3.6"
 dependencies = ["cffi"]
 classifiers = [
