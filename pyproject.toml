@@ -1,10 +1,13 @@
 [build-system]
-requires = ["maturin>=0.12,<0.13"]
+requires = ["maturin>=0.12,<0.13", "cffi"]
 build-backend = "maturin"
+
+[tool.maturin]
+cargo-extra-args = "--features pyo3"
 
 [project]
 name = "nb2pb"
-version = "0.1.1"
+version = "0.1.2"
 requires-python = ">=3.6"
 dependencies = ["cffi"]
 classifiers = [
