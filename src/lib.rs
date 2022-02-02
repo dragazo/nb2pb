@@ -59,7 +59,7 @@ impl ScriptInfo {
         Ok(match value {
             Value::String(v) => (format!("'{}'", escape(v)), Type::Unknown),
             Value::Number(v) => (format!("{}", v), Type::Unknown),
-            Value::Bool(v) => ((if *v { "true" } else { "false" }).into(), Type::Wrapped), // bool is considered wrapped since we can't extend it
+            Value::Bool(v) => ((if *v { "True" } else { "False" }).into(), Type::Wrapped), // bool is considered wrapped since we can't extend it
             Value::Constant(c) => match c {
                 Constant::Pi => ("math.pi".into(), Type::Unknown),
                 Constant::E => ("math.e".into(), Type::Unknown),
@@ -105,6 +105,9 @@ impl ScriptInfo {
                 (format!("[{}]", items.join(", ")), Type::Unknown)
             }
 
+            Expr::Neg { value, .. } => (format!("-{}", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            Expr::Not { value, .. } => (format!("~{}", wrap(self.translate_expr(value)?)), Type::Wrapped),
+
             Expr::Add { left, right, .. } => (format!("({} + {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
             Expr::Sub { left, right, .. } => (format!("({} - {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
             Expr::Mul { left, right, .. } => (format!("({} * {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
@@ -112,7 +115,7 @@ impl ScriptInfo {
             Expr::Mod { left, right, .. } => (format!("({} % {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
 
             Expr::Pow { base, power, .. } => (format!("({} ** {})", wrap(self.translate_expr(base)?), wrap(self.translate_expr(power)?)), Type::Wrapped),
-            Expr::Log { value, base, .. } => (format!("math.log({}, {})", wrap(self.translate_expr(value)?), wrap(self.translate_expr(base)?)), Type::Wrapped),
+            Expr::Log { value, base, .. } => (format!("snap.log({}, {})", wrap(self.translate_expr(value)?), wrap(self.translate_expr(base)?)), Type::Wrapped),
 
             Expr::And { left, right, .. } => (format!("({} and {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
             Expr::Or { left, right, .. } => (format!("({} or {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
@@ -132,6 +135,10 @@ impl ScriptInfo {
 
             Expr::CallRpc { service, rpc, args, .. } => (self.translate_rpc(service, rpc, args, None)?, Type::Unknown),
             Expr::CallFn { function, args, .. } => (self.translate_fn_call(function, args, None)?, Type::Wrapped),
+
+            Expr::XPos { .. } => ("self.x_pos".into(), Type::Unknown),
+            Expr::YPos { .. } => ("self.y_pos".into(), Type::Unknown),
+            Expr::Heading { .. } => ("self.heading".into(), Type::Unknown),
 
             x => panic!("{:#?}", x),
         })
@@ -175,11 +182,27 @@ impl ScriptInfo {
                     };
                     lines.push(format!("self.costume = {}{}", costume, fmt_comment!(comment)));
                 }
+                Stmt::ChangePos { dx, dy, comment } => {
+                    let mut comment = comment.as_ref();
+                    for (var, val) in [("x_pos", dx), ("y_pos", dy)] {
+                        if let Some(val) = val {
+                            lines.push(format!("self.{} += {}{}", var, self.translate_expr(val)?.0, fmt_comment!(comment.take())));
+                        }
+                    }
+                }
+                Stmt::SetPos { x, y, comment } => match (x, y) {
+                    (Some(x), Some(y)) => lines.push(format!("self.pos = ({}, {}){}", self.translate_expr(x)?.0, self.translate_expr(y)?.0, fmt_comment!(comment))),
+                    (Some(x), None) => lines.push(format!("self.x_pos = {}{}", self.translate_expr(x)?.0, fmt_comment!(comment))),
+                    (None, Some(y)) => lines.push(format!("self.y_pos = {}{}", self.translate_expr(y)?.0, fmt_comment!(comment))),
+                    (None, None) => (), // the parser would never emit this, but it's not like it would matter...
+                }
+                Stmt::Goto { target, comment } => lines.push(format!("self.goto({}){}", self.translate_expr(target)?.0, fmt_comment!(comment))),
                 Stmt::RunRpc { service, rpc, args, comment } => lines.push(self.translate_rpc(service, rpc, args, comment.as_deref())?),
                 Stmt::RunFn { function, args, comment } => lines.push(self.translate_fn_call(function, args, comment.as_deref())?),
                 Stmt::Forward { distance, comment } => lines.push(format!("self.forward({}){}", self.translate_expr(distance)?.0, fmt_comment!(comment))),
                 Stmt::TurnRight { angle, comment } => lines.push(format!("self.turn_right({}){}", self.translate_expr(angle)?.0, fmt_comment!(comment))),
                 Stmt::TurnLeft { angle, comment } => lines.push(format!("self.turn_left({}){}", self.translate_expr(angle)?.0, fmt_comment!(comment))),
+                Stmt::SetHeading { value, comment } => lines.push(format!("self.heading = {}{}", self.translate_expr(value)?.0, fmt_comment!(comment))),
                 Stmt::Return { value, comment } => lines.push(format!("return {}{}", wrap(self.translate_expr(value)?), fmt_comment!(comment))),
                 x => panic!("{:?}", x),
             }
@@ -232,8 +255,8 @@ impl SpriteInfo {
         Ok(match hat {
             Hat::OnFlag { comment } => format!("@onstart(){}\ndef my_onstart_{}(self):\n", fmt_comment!(comment), self.scripts.len() + 1),
             Hat::OnKey { key, comment } => format!("@onkey('{}'){}\ndef my_onkey_{}(self):\n", key, fmt_comment!(comment), self.scripts.len() + 1),
-            Hat::MouseDown { comment } => format!("@onclick(when = 'down'){}\ndef my_onclick_{}(self):\n", fmt_comment!(comment), self.scripts.len() + 1),
-            Hat::MouseUp { comment } => format!("@onclick(when = 'up'){}\ndef my_onclick_{}(self):\n", fmt_comment!(comment), self.scripts.len() + 1),
+            Hat::MouseDown { comment } => format!("@onclick(when = 'down'){}\ndef my_onclick_{}(self, x, y):\n", fmt_comment!(comment), self.scripts.len() + 1),
+            Hat::MouseUp { comment } => format!("@onclick(when = 'up'){}\ndef my_onclick_{}(self, x, y):\n", fmt_comment!(comment), self.scripts.len() + 1),
             Hat::MouseEnter { .. } => return Err(TranslateError::UnsupportedBlock("mouseenter interactions are not currently supported")),
             Hat::MouseLeave { .. } => return Err(TranslateError::UnsupportedBlock("mouseleave interactions are not currently supported")),
             Hat::ScrollUp { .. } => return Err(TranslateError::UnsupportedBlock("scrollup interactions are not currently supported")),
