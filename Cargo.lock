@@ -174,9 +174,10 @@ checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
 
 [[package]]
 name = "nb2pb"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "netsblox-ast",
+ "once_cell",
  "pyo3",
  "pyo3-build-config",
  "serde",
@@ -185,9 +186,9 @@ dependencies = [
 
 [[package]]
 name = "netsblox-ast"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8962fe833cb74afee764e6d6936b861ce1ac0d8b9e8a8358c7487330d3edfaa"
+checksum = "74740e1488b19765afc37034bc62b21506ed045bf0adce8482035d4ed2f8f7ff"
 dependencies = [
  "derive_builder",
  "lazy_static",

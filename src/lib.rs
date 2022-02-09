@@ -7,6 +7,8 @@ use std::fmt::Write;
 use std::rc::Rc;
 use std::iter;
 
+use once_cell::unsync::OnceCell;
+
 #[macro_use] extern crate serde_json;
 
 pub use netsblox_ast::Error as ParseError;
@@ -50,11 +52,13 @@ fn translate_var(var: &VariableRef) -> String {
     }
 }
 
-#[derive(Default)]
-struct ScriptInfo {
-
+struct ScriptInfo<'a> {
+    stage: &'a SpriteInfo,
 }
-impl ScriptInfo {
+impl<'a> ScriptInfo<'a> {
+    fn new(stage: &'a SpriteInfo) -> Self {
+        Self { stage }
+    }
     fn translate_value(&mut self, value: &Value) -> Result<(String, Type), TranslateError> {
         Ok(match value {
             Value::String(v) => (format!("'{}'", escape(v)), Type::Unknown),
@@ -117,6 +121,9 @@ impl ScriptInfo {
             Expr::Pow { base, power, .. } => (format!("({} ** {})", wrap(self.translate_expr(base)?), wrap(self.translate_expr(power)?)), Type::Wrapped),
             Expr::Log { value, base, .. } => (format!("snap.log({}, {})", wrap(self.translate_expr(value)?), wrap(self.translate_expr(base)?)), Type::Wrapped),
 
+            Expr::Round { value, .. } => (format!("snap.sround({})", self.translate_expr(value)?.0), Type::Wrapped),
+            Expr::Sqrt { value, .. } => (format!("snap.ssqrt({})", self.translate_expr(value)?.0), Type::Wrapped),
+
             Expr::And { left, right, .. } => (format!("({} and {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
             Expr::Or { left, right, .. } => (format!("({} or {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
             Expr::Conditional { condition, then, otherwise, .. } => {
@@ -130,6 +137,7 @@ impl ScriptInfo {
             Expr::Greater { left, right, .. } => (format!("({} > {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
 
             Expr::RandInclusive { a, b, .. } => (format!("snap.rand({}, {})", self.translate_expr(a)?.0, self.translate_expr(b)?.0), Type::Wrapped), // python impl returns wrapped
+            Expr::RangeInclusive { start, stop, .. } => (format!("snap.srange({}, {})", self.translate_expr(start)?.0, self.translate_expr(stop)?.0), Type::Wrapped), // python impl returns wrapped
 
             Expr::Listlen { value, .. } => (format!("len({})", self.translate_expr(value)?.0), Type::Unknown), // builtin __len__ can't be overloaded to return wrapped
 
@@ -139,6 +147,17 @@ impl ScriptInfo {
             Expr::XPos { .. } => ("self.x_pos".into(), Type::Unknown),
             Expr::YPos { .. } => ("self.y_pos".into(), Type::Unknown),
             Expr::Heading { .. } => ("self.heading".into(), Type::Unknown),
+
+            Expr::MouseX { .. } => (format!("{}.mouse_pos[0]", self.stage.name), Type::Unknown),
+            Expr::MouseY { .. } => (format!("{}.mouse_pos[1]", self.stage.name), Type::Unknown),
+
+            Expr::StageWidth { .. } => (format!("{}.width", self.stage.name), Type::Unknown),
+            Expr::StageHeight { .. } => (format!("{}.height", self.stage.name), Type::Unknown),
+
+            Expr::Latitude { .. } => (format!("{}.gps_location[0]", self.stage.name), Type::Unknown),
+            Expr::Longitude { .. } => (format!("{}.gps_location[1]", self.stage.name), Type::Unknown),
+
+            Expr::PenDown { .. } => ("self.drawing".into(), Type::Wrapped), // bool is considered wrapped
 
             x => panic!("{:#?}", x),
         })
@@ -175,6 +194,31 @@ impl ScriptInfo {
                     let otherwise = self.translate_stmts(otherwise)?;
                     lines.push(format!("if {}:{}\n{}\nelse:\n{}", condition, fmt_comment!(comment), indent(&then), indent(&otherwise)));
                 }
+                Stmt::InfLoop { stmts, comment } => {
+                    let code = self.translate_stmts(stmts)?;
+                    lines.push(format!("while True:{}\n{}", fmt_comment!(comment), indent(&code)));
+                }
+                Stmt::ForLoop { var, start, stop, stmts, comment } => {
+                    let start = self.translate_expr(start)?.0;
+                    let stop = self.translate_expr(stop)?.0;
+                    let code = self.translate_stmts(stmts)?;
+                    lines.push(format!("for {} in snap.sxrange({}, {}):{}\n{}", var.trans_name, start, stop, fmt_comment!(comment), indent(&code)));
+                }
+                Stmt::ForeachLoop { var, items, stmts, comment } => {
+                    let items = wrap(self.translate_expr(items)?);
+                    let code = self.translate_stmts(stmts)?;
+                    lines.push(format!("for {} in {}:{}\n{}", var.trans_name, items, fmt_comment!(comment), indent(&code)));
+                }
+                Stmt::Repeat { times, stmts, comment } => {
+                    let times = wrap(self.translate_expr(times)?);
+                    let code = self.translate_stmts(stmts)?;
+                    lines.push(format!("for _ in range(+{}):{}\n{}", times, fmt_comment!(comment), indent(&code)));
+                }
+                Stmt::UntilLoop { condition, stmts, comment } => {
+                    let condition = wrap(self.translate_expr(condition)?);
+                    let code = self.translate_stmts(stmts)?;
+                    lines.push(format!("while not {}:{}\n{}", condition, fmt_comment!(comment), indent(&code)));
+                }
                 Stmt::SwitchCostume { costume, comment } => {
                     let costume = match costume {
                         Some(v) => self.translate_expr(v)?.0,
@@ -196,6 +240,15 @@ impl ScriptInfo {
                     (None, Some(y)) => lines.push(format!("self.y_pos = {}{}", self.translate_expr(y)?.0, fmt_comment!(comment))),
                     (None, None) => (), // the parser would never emit this, but it's not like it would matter...
                 }
+                Stmt::SendLocalMessage { targets, message_type, wait, comment } => {
+                    if *wait { unimplemented!() }
+
+                    let targets_str = if let Some(t) = targets { format!(", {}", self.translate_expr(t)?.0) } else { String::new() };
+                    lines.push(format!("nb.send_message({}{}){}", self.translate_expr(message_type)?.0, targets_str, fmt_comment!(comment)));
+                }
+                Stmt::WaitUntil { condition, comment } => lines.push(format!("while not {}:{}\n    time.sleep(0.05)", wrap(self.translate_expr(condition)?), fmt_comment!(comment))),
+                Stmt::BounceOffEdge { comment } => lines.push(format!("self.keep_on_stage(bounce = True){}", fmt_comment!(comment))),
+                Stmt::Sleep { seconds, comment } => lines.push(format!("time.sleep(+{}){}", wrap(self.translate_expr(seconds)?), fmt_comment!(comment))),
                 Stmt::Goto { target, comment } => lines.push(format!("self.goto({}){}", self.translate_expr(target)?.0, fmt_comment!(comment))),
                 Stmt::RunRpc { service, rpc, args, comment } => lines.push(self.translate_rpc(service, rpc, args, comment.as_deref())?),
                 Stmt::RunFn { function, args, comment } => lines.push(self.translate_fn_call(function, args, comment.as_deref())?),
@@ -204,6 +257,14 @@ impl ScriptInfo {
                 Stmt::TurnLeft { angle, comment } => lines.push(format!("self.turn_left({}){}", self.translate_expr(angle)?.0, fmt_comment!(comment))),
                 Stmt::SetHeading { value, comment } => lines.push(format!("self.heading = {}{}", self.translate_expr(value)?.0, fmt_comment!(comment))),
                 Stmt::Return { value, comment } => lines.push(format!("return {}{}", wrap(self.translate_expr(value)?), fmt_comment!(comment))),
+                Stmt::Stamp { comment } => lines.push(format!("self.stamp(){}", fmt_comment!(comment))),
+                Stmt::Write { content, font_size, comment } => lines.push(format!("self.write({}, size = {}){}", self.translate_expr(content)?.0, self.translate_expr(font_size)?.0, fmt_comment!(comment))),
+                Stmt::PenDown { comment } => lines.push(format!("self.drawing = True{}", fmt_comment!(comment))),
+                Stmt::PenUp { comment } => lines.push(format!("self.drawing = False{}", fmt_comment!(comment))),
+                Stmt::PenClear { comment } => lines.push(format!("{}.clear_drawings(){}", self.stage.name, fmt_comment!(comment))),
+                Stmt::SetPenColor { color, comment } => lines.push(format!("self.pen_color = '#{:02x}{:02x}{:02x}'{}", color.0, color.1, color.2, fmt_comment!(comment))),
+                Stmt::ChangeScalePercent { amount, comment } => lines.push(format!("self.scale += {}{}", self.translate_expr(amount)?.0, fmt_comment!(comment))),
+                Stmt::SetScalePercent { value, comment } => lines.push(format!("self.scale = {}{}", self.translate_expr(value)?.0, fmt_comment!(comment))),
                 x => panic!("{:?}", x),
             }
         }
@@ -222,6 +283,7 @@ impl RoleInfo {
     }
 }
 
+#[derive(Clone)]
 struct SpriteInfo {
     name: String,
     scripts: Vec<String>,
@@ -251,21 +313,42 @@ impl SpriteInfo {
             scale: src.scale,
         }
     }
-    fn translate_hat(&mut self, hat: &Hat) -> Result<String, TranslateError> {
+    fn translate_hat(&mut self, hat: &Hat, stage: &SpriteInfo) -> Result<String, TranslateError> {
         Ok(match hat {
             Hat::OnFlag { comment } => format!("@onstart(){}\ndef my_onstart_{}(self):\n", fmt_comment!(comment), self.scripts.len() + 1),
             Hat::OnKey { key, comment } => format!("@onkey('{}'){}\ndef my_onkey_{}(self):\n", key, fmt_comment!(comment), self.scripts.len() + 1),
-            Hat::MouseDown { comment } => format!("@onclick(when = 'down'){}\ndef my_onclick_{}(self, x, y):\n", fmt_comment!(comment), self.scripts.len() + 1),
-            Hat::MouseUp { comment } => format!("@onclick(when = 'up'){}\ndef my_onclick_{}(self, x, y):\n", fmt_comment!(comment), self.scripts.len() + 1),
+            Hat::MouseDown { comment } => format!("@onmouse('down'){}\ndef my_onmouse_{}(self, x, y):\n", fmt_comment!(comment), self.scripts.len() + 1),
+            Hat::MouseUp { comment } => format!("@onmouse('up'){}\ndef my_onmouse_{}(self, x, y):\n", fmt_comment!(comment), self.scripts.len() + 1),
             Hat::MouseEnter { .. } => return Err(TranslateError::UnsupportedBlock("mouseenter interactions are not currently supported")),
             Hat::MouseLeave { .. } => return Err(TranslateError::UnsupportedBlock("mouseleave interactions are not currently supported")),
-            Hat::ScrollUp { .. } => return Err(TranslateError::UnsupportedBlock("scrollup interactions are not currently supported")),
-            Hat::ScrollDown { .. } => return Err(TranslateError::UnsupportedBlock("scrolldown interactions are not currently supported")),
+            Hat::ScrollDown { comment } => format!("@onmouse('scroll-down'){}\ndef my_onmouse_{}(self, x, y):\n", fmt_comment!(comment), self.scripts.len() + 1),
+            Hat::ScrollUp { comment } => format!("@onmouse('scroll-up'){}\ndef my_onmouse_{}(self, x, y):\n", fmt_comment!(comment), self.scripts.len() + 1),
             Hat::Dropped { .. } => return Err(TranslateError::UnsupportedBlock("drop interactions are not currently supported")),
             Hat::Stopped { .. } => return Err(TranslateError::UnsupportedBlock("stop interactions are not currently supported")),
-            Hat::Message { msg, fields, comment } => {
+            Hat::When { condition, comment } => {
+                format!(r#"@onstart(){comment}
+def {fn1}(self):
+    while True:
+        try:
+            time.sleep(0.05)
+            if {condition}:
+                self.{fn2}()
+        except Exception as e:
+            import traceback, sys
+            print(traceback.format_exc(), file = sys.stderr)
+def {fn2}(self):
+"#,
+                comment = fmt_comment!(comment),
+                fn1 = format!("my_onstart_{}", self.scripts.len() + 1),
+                fn2 = format!("my_oncondition_{}", self.scripts.len() + 1),
+                condition = wrap(ScriptInfo::new(stage).translate_expr(condition)?))
+            }
+            Hat::LocalMessage { message_type, comment } => {
+                format!("@nb.on_message('{}'){}\ndef my_on_message_{}(self, **kwargs):\n", escape(message_type), fmt_comment!(comment), self.scripts.len() + 1)
+            }
+            Hat::NetworkMessage { message_type, fields, comment } => {
                 let params = iter::once("self").chain(fields.iter().map(String::as_str)).chain(iter::once("**kwargs"));
-                format!("@nb.on_message('{}'){}\ndef my_on_message_{}({}):\n", escape(msg), fmt_comment!(comment), self.scripts.len() + 1, Punctuated(params, ", "))
+                format!("@nb.on_message('{}'){}\ndef my_on_message_{}({}):\n", escape(message_type), fmt_comment!(comment), self.scripts.len() + 1, Punctuated(params, ", "))
             }
         })
     }
@@ -282,9 +365,12 @@ pub fn translate(source: &str) -> Result<(String, String), TranslateError> {
     let mut roles = vec![];
     for role in project.roles.iter() {
         let mut role_info = RoleInfo::new(role.name.clone());
+        let stage = OnceCell::new();
 
         for sprite in role.sprites.iter() {
             let mut sprite_info = SpriteInfo::new(sprite);
+            stage.get_or_init(|| sprite_info.clone());
+
             for costume in sprite.costumes.iter() {
                 let content = match &costume.value {
                     Value::String(s) => s,
@@ -293,15 +379,15 @@ pub fn translate(source: &str) -> Result<(String, String), TranslateError> {
                 sprite_info.costumes.push((costume.trans_name.clone(), content.clone()));
             }
             for field in sprite.fields.iter() {
-                let value = wrap(ScriptInfo::default().translate_value(&field.value)?);
+                let value = wrap(ScriptInfo::new(stage.get().unwrap()).translate_value(&field.value)?);
                 sprite_info.fields.push((field.trans_name.clone(), value));
             }
             for script in sprite.scripts.iter() {
                 let func_def = match script.hat.as_ref() {
-                    Some(x) => sprite_info.translate_hat(x)?,
+                    Some(x) => sprite_info.translate_hat(x, stage.get().unwrap())?,
                     None => continue, // dangling blocks of code need not be translated
                 };
-                let body = ScriptInfo::default().translate_stmts(&script.stmts)?;
+                let body = ScriptInfo::new(stage.get().unwrap()).translate_stmts(&script.stmts)?;
                 let res = format!("{}{}", func_def, indent(&body));
                 sprite_info.scripts.push(res);
             }
@@ -313,13 +399,13 @@ pub fn translate(source: &str) -> Result<(String, String), TranslateError> {
         let mut content = String::new();
         content += "from netsblox import snap\n\n";
         for global in role.globals.iter() {
-            let value = wrap(ScriptInfo::default().translate_value(&global.value)?);
+            let value = wrap(ScriptInfo::new(stage.get().unwrap()).translate_value(&global.value)?);
             write!(&mut content, "{} = {}\n", global.trans_name, value).unwrap();
         }
         if !role.globals.is_empty() { content.push('\n') }
         for func in role.funcs.iter() {
             let params = iter::once("self").chain(func.params.iter().map(|v| v.trans_name.as_str()));
-            let code = ScriptInfo::default().translate_stmts(&func.stmts)?;
+            let code = ScriptInfo::new(stage.get().unwrap()).translate_stmts(&func.stmts)?;
             write!(&mut content, "def {}({}):\n{}\n\n", func.trans_name, Punctuated(params, ", "), indent(&code)).unwrap();
         }
         editors.push(json!({
@@ -359,7 +445,7 @@ pub fn translate(source: &str) -> Result<(String, String), TranslateError> {
 
             for func in sprite.funcs.iter() {
                 let params = iter::once("self").chain(func.params.iter().map(|v| v.trans_name.as_str()));
-                let code = ScriptInfo::default().translate_stmts(&func.stmts)?;
+                let code = ScriptInfo::new(stage.get().unwrap()).translate_stmts(&func.stmts)?;
                 write!(&mut content, "def {}({}):\n{}\n\n", func.trans_name, Punctuated(params, ", "), indent(&code)).unwrap();
             }
 
@@ -390,7 +476,7 @@ pub fn translate(source: &str) -> Result<(String, String), TranslateError> {
                 "stage": [],
                 "turtle": [],
             },
-            "imports": [],
+            "imports": ["time"],
             "editors": editors,
             "images": images,
         }));
