@@ -101,6 +101,11 @@ impl<'a> ScriptInfo<'a> {
             Expr::Value(v) => self.translate_value(v)?,
             Expr::Variable { var, .. } => (translate_var(var), Type::Wrapped), // all assignments are wrapped, so we can assume vars are wrapped
 
+            Expr::This { .. } => ("self".into(), Type::Wrapped), // non-primitives are considered wrapped
+            Expr::Entity { trans_name, .. } => (trans_name.into(), Type::Wrapped), // non-primitives are considered wrapped
+
+            Expr::ImageOf { entity, .. } => (format!("{}.get_image()", self.translate_expr(entity)?.0), Type::Wrapped), // non-primitives are considered wrapped
+
             Expr::MakeList { values, .. } => {
                 let mut items = Vec::with_capacity(values.len());
                 for val in values {
@@ -111,6 +116,7 @@ impl<'a> ScriptInfo<'a> {
 
             Expr::Neg { value, .. } => (format!("-{}", wrap(self.translate_expr(value)?)), Type::Wrapped),
             Expr::Not { value, .. } => (format!("~{}", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            Expr::Abs { value, .. } => (format!("abs({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
 
             Expr::Add { left, right, .. } => (format!("({} + {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
             Expr::Sub { left, right, .. } => (format!("({} - {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
@@ -121,8 +127,19 @@ impl<'a> ScriptInfo<'a> {
             Expr::Pow { base, power, .. } => (format!("({} ** {})", wrap(self.translate_expr(base)?), wrap(self.translate_expr(power)?)), Type::Wrapped),
             Expr::Log { value, base, .. } => (format!("snap.log({}, {})", wrap(self.translate_expr(value)?), wrap(self.translate_expr(base)?)), Type::Wrapped),
 
-            Expr::Round { value, .. } => (format!("snap.sround({})", self.translate_expr(value)?.0), Type::Wrapped),
-            Expr::Sqrt { value, .. } => (format!("snap.ssqrt({})", self.translate_expr(value)?.0), Type::Wrapped),
+            Expr::Sqrt { value, .. } => (format!("snap.sqrt({})", self.translate_expr(value)?.0), Type::Wrapped),
+
+            Expr::Round { value, .. } => (format!("round({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            Expr::Floor { value, .. } => (format!("math.floor({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            Expr::Ceil { value, .. } => (format!("math.ceil({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+
+            Expr::Sin { value, .. } => (format!("snap.sin({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            Expr::Cos { value, .. } => (format!("snap.cos({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            Expr::Tan { value, .. } => (format!("snap.tan({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+
+            Expr::Asin { value, .. } => (format!("snap.asin({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            Expr::Acos { value, .. } => (format!("snap.acos({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            Expr::Atan { value, .. } => (format!("snap.atan({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
 
             Expr::And { left, right, .. } => (format!("({} and {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
             Expr::Or { left, right, .. } => (format!("({} or {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
@@ -131,7 +148,7 @@ impl<'a> ScriptInfo<'a> {
                 (format!("({} if {} else {})", then.0, wrap(self.translate_expr(condition)?), otherwise.0), if then.1 == otherwise.1 { then.1 } else { Type::Unknown })
             }
 
-            Expr::RefEq { left, right, .. } => (format!("({} is {})", self.translate_expr(left)?.0, self.translate_expr(right)?.0), Type::Wrapped), // bool is considered wrapped
+            Expr::Identical { left, right, .. } => (format!("snap.identical({}, {})", self.translate_expr(left)?.0, self.translate_expr(right)?.0), Type::Wrapped), // bool is considered wrapped
             Expr::Eq { left, right, .. } => (format!("({} == {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
             Expr::Less { left, right, .. } => (format!("({} < {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
             Expr::Greater { left, right, .. } => (format!("({} > {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
@@ -139,7 +156,39 @@ impl<'a> ScriptInfo<'a> {
             Expr::RandInclusive { a, b, .. } => (format!("snap.rand({}, {})", self.translate_expr(a)?.0, self.translate_expr(b)?.0), Type::Wrapped), // python impl returns wrapped
             Expr::RangeInclusive { start, stop, .. } => (format!("snap.srange({}, {})", self.translate_expr(start)?.0, self.translate_expr(stop)?.0), Type::Wrapped), // python impl returns wrapped
 
-            Expr::Listlen { value, .. } => (format!("len({})", self.translate_expr(value)?.0), Type::Unknown), // builtin __len__ can't be overloaded to return wrapped
+            Expr::Listcat { lists, .. } => {
+                let mut trans = Vec::with_capacity(lists.len());
+                for list in lists {
+                    trans.push(self.translate_expr(list)?.0);
+                }
+                (format!("[{}]", Punctuated(trans.iter().map(|s| format!("*{}", s)), ", ")), Type::Unknown)
+            }
+            Expr::Strcat { values, .. } => {
+                let mut trans = Vec::with_capacity(values.len());
+                for list in values {
+                    trans.push(self.translate_expr(list)?.0);
+                }
+                (Punctuated(trans.iter().map(|s| format!("str({})", s)), " + ").to_string(), Type::Unknown)
+            }
+
+            Expr::Listlen { value, .. } | Expr::Strlen { value, .. } => (format!("len({})", self.translate_expr(value)?.0), Type::Unknown), // builtin __len__ can't be overloaded to return wrapped
+            Expr::ListFind { list, value, .. } => (format!("{}.index({})", wrap(self.translate_expr(list)?), self.translate_expr(value)?.0), Type::Wrapped),
+            Expr::ListIndex { list, index, .. } => (format!("{}[{}]", wrap(self.translate_expr(list)?), self.translate_expr(index)?.0), Type::Wrapped),
+            Expr::ListRandIndex { list, .. } => (format!("snap.choice({})", wrap(self.translate_expr(list)?)), Type::Wrapped),
+            Expr::ListLastIndex { list, .. } => (format!("{}[-1]", wrap(self.translate_expr(list)?)), Type::Wrapped),
+
+            Expr::ListSlice { value, from, to, .. } => {
+                let value = wrap(self.translate_expr(value)?);
+                match (from, to) {
+                    (Some(from), Some(to)) => (format!("{}[{}:{}]", value, wrap(self.translate_expr(from)?), wrap(self.translate_expr(to)?)), Type::Wrapped),
+                    (Some(from), None) => (format!("{}[{}:]", value, wrap(self.translate_expr(from)?)), Type::Wrapped),
+                    (None, Some(to)) => (format!("{}[:{}]", value, wrap(self.translate_expr(to)?)), Type::Wrapped),
+                    (None, None) => (format!("{}[:]", value), Type::Wrapped),
+                }
+            }
+
+            Expr::UnicodeToChar { value, .. } => (format!("snap.get_chr({})", self.translate_expr(value)?.0), Type::Unknown),
+            Expr::CharToUnicode { value, .. } => (format!("snap.get_ord({})", self.translate_expr(value)?.0), Type::Unknown),
 
             Expr::CallRpc { service, rpc, args, .. } => (self.translate_rpc(service, rpc, args, None)?, Type::Unknown),
             Expr::CallFn { function, args, .. } => (self.translate_fn_call(function, args, None)?, Type::Wrapped),
@@ -158,8 +207,6 @@ impl<'a> ScriptInfo<'a> {
             Expr::Longitude { .. } => (format!("{}.gps_location[1]", self.stage.name), Type::Unknown),
 
             Expr::PenDown { .. } => ("self.drawing".into(), Type::Wrapped), // bool is considered wrapped
-
-            x => panic!("{:#?}", x),
         })
     }
     fn translate_stmts(&mut self, stmts: &[Stmt]) -> Result<String, TranslateError> {
@@ -358,7 +405,13 @@ def {fn2}(self):
 ///
 /// On success, returns the project name and project json content as a tuple.
 pub fn translate(source: &str) -> Result<(String, String), TranslateError> {
-    let parser = ParserBuilder::default().optimize(true).name_transformer(Rc::new(&c_ident)).build().unwrap();
+    let parser = ParserBuilder::default()
+        .name_transformer(Rc::new(&c_ident))
+        .adjust_to_zero_index(true)
+        .adjust_to_open_slice_end(true)
+        .optimize(true)
+        .build().unwrap();
+
     let project = parser.parse(&mut source.as_bytes())?;
     if project.roles.is_empty() { return Err(TranslateError::NoRoles) }
 
@@ -476,7 +529,7 @@ pub fn translate(source: &str) -> Result<(String, String), TranslateError> {
                 "stage": [],
                 "turtle": [],
             },
-            "imports": ["time"],
+            "imports": ["time", "math"],
             "editors": editors,
             "images": images,
         }));

@@ -187,8 +187,6 @@ dependencies = [
 [[package]]
 name = "netsblox-ast"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74740e1488b19765afc37034bc62b21506ed045bf0adce8482035d4ed2f8f7ff"
 dependencies = [
  "derive_builder",
  "lazy_static",
