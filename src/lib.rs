@@ -176,16 +176,7 @@ impl<'a> ScriptInfo<'a> {
             Expr::ListIndex { list, index, .. } => (format!("{}[{}]", wrap(self.translate_expr(list)?), self.translate_expr(index)?.0), Type::Wrapped),
             Expr::ListRandIndex { list, .. } => (format!("snap.choice({})", wrap(self.translate_expr(list)?)), Type::Wrapped),
             Expr::ListLastIndex { list, .. } => (format!("{}[-1]", wrap(self.translate_expr(list)?)), Type::Wrapped),
-
-            Expr::ListSlice { value, from, to, .. } => {
-                let value = wrap(self.translate_expr(value)?);
-                match (from, to) {
-                    (Some(from), Some(to)) => (format!("{}[{}:{}]", value, wrap(self.translate_expr(from)?), wrap(self.translate_expr(to)?)), Type::Wrapped),
-                    (Some(from), None) => (format!("{}[{}:]", value, wrap(self.translate_expr(from)?)), Type::Wrapped),
-                    (None, Some(to)) => (format!("{}[:{}]", value, wrap(self.translate_expr(to)?)), Type::Wrapped),
-                    (None, None) => (format!("{}[:]", value), Type::Wrapped),
-                }
-            }
+            Expr::ListAllButFirst { value, .. } => (format!("{}.all_but_first()", wrap(self.translate_expr(value)?)), Type::Wrapped),
 
             Expr::UnicodeToChar { value, .. } => (format!("snap.get_chr({})", self.translate_expr(value)?.0), Type::Unknown),
             Expr::CharToUnicode { value, .. } => (format!("snap.get_ord({})", self.translate_expr(value)?.0), Type::Unknown),
@@ -287,11 +278,22 @@ impl<'a> ScriptInfo<'a> {
                     (None, Some(y)) => lines.push(format!("self.y_pos = {}{}", self.translate_expr(y)?.0, fmt_comment!(comment))),
                     (None, None) => (), // the parser would never emit this, but it's not like it would matter...
                 }
-                Stmt::SendLocalMessage { targets, message_type, wait, comment } => {
+                Stmt::SendLocalMessage { target, msg_type, wait, comment } => {
                     if *wait { unimplemented!() }
 
-                    let targets_str = if let Some(t) = targets { format!(", {}", self.translate_expr(t)?.0) } else { String::new() };
-                    lines.push(format!("nb.send_message({}{}){}", self.translate_expr(message_type)?.0, targets_str, fmt_comment!(comment)));
+                    let targets_str = if let Some(t) = target { format!(", {}", self.translate_expr(t)?.0) } else { String::new() };
+                    lines.push(format!("nb.send_message({}{}){}", self.translate_expr(msg_type)?.0, targets_str, fmt_comment!(comment)));
+                }
+                Stmt::SendNetworkMessage { target, msg_type, values, comment } => {
+                    let mut targets_str = String::new();
+                    targets_str += "**{ ";
+                    for (i, value) in values.iter().enumerate() {
+                        if i != 0 { targets_str += ", "; }
+                        write!(&mut targets_str, "'{}': {}", escape(&value.0), self.translate_expr(&value.1)?.0).unwrap();
+                    }
+                    targets_str += " }";
+
+                    lines.push(format!("nb.send_message('{}', {}, {}){}", escape(msg_type), self.translate_expr(target)?.0, targets_str, fmt_comment!(comment)));
                 }
                 Stmt::WaitUntil { condition, comment } => lines.push(format!("while not {}:{}\n    time.sleep(0.05)", wrap(self.translate_expr(condition)?), fmt_comment!(comment))),
                 Stmt::BounceOffEdge { comment } => lines.push(format!("self.keep_on_stage(bounce = True){}", fmt_comment!(comment))),
@@ -390,12 +392,16 @@ def {fn2}(self):
                 fn2 = format!("my_oncondition_{}", self.scripts.len() + 1),
                 condition = wrap(ScriptInfo::new(stage).translate_expr(condition)?))
             }
-            Hat::LocalMessage { message_type, comment } => {
-                format!("@nb.on_message('{}'){}\ndef my_on_message_{}(self, **kwargs):\n", escape(message_type), fmt_comment!(comment), self.scripts.len() + 1)
+            Hat::LocalMessage { msg_type, comment } => {
+                format!("@nb.on_message('{}'){}\ndef my_on_message_{}(self, **kwargs):\n", escape(msg_type), fmt_comment!(comment), self.scripts.len() + 1)
             }
-            Hat::NetworkMessage { message_type, fields, comment } => {
-                let params = iter::once("self").chain(fields.iter().map(String::as_str)).chain(iter::once("**kwargs"));
-                format!("@nb.on_message('{}'){}\ndef my_on_message_{}({}):\n", escape(message_type), fmt_comment!(comment), self.scripts.len() + 1, Punctuated(params, ", "))
+            Hat::NetworkMessage { msg_type, fields, comment } => {
+                let mut res = format!("@nb.on_message('{}'){}\ndef my_on_message_{}(self, **kwargs):\n", escape(msg_type), fmt_comment!(comment), self.scripts.len() + 1);
+                for field in fields {
+                    writeln!(&mut res, "    {} = snap.wrap(kwargs['{}'])", field.trans_name, escape(&field.name)).unwrap();
+                }
+                if !fields.is_empty() { res.push('\n') }
+                res
             }
         })
     }
@@ -408,7 +414,6 @@ pub fn translate(source: &str) -> Result<(String, String), TranslateError> {
     let parser = ParserBuilder::default()
         .name_transformer(Rc::new(&c_ident))
         .adjust_to_zero_index(true)
-        .adjust_to_open_slice_end(true)
         .optimize(true)
         .build().unwrap();
 
