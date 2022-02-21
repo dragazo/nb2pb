@@ -549,6 +549,7 @@ pub fn translate(source: &str) -> Result<(String, String), TranslateError> {
 
         roles.push(json!({
             "name": role_info.name,
+            "stage_size": role.stage_size,
             "block_sources": [ "netsblox://assets/default-blocks.json" ],
             "blocks": {
                 "global": [],
