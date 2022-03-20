@@ -8,11 +8,26 @@ use std::rc::Rc;
 use std::iter;
 
 use once_cell::unsync::OnceCell;
+use regex::Regex;
 
 #[macro_use] extern crate serde_json;
+#[macro_use] extern crate lazy_static;
 
 pub use netsblox_ast::Error as ParseError;
 use netsblox_ast::{*, util::*};
+
+lazy_static! {
+    static ref PY_IDENT_REGEX: Regex = Regex::new(r"^[_a-zA-Z][_a-zA-Z0-9]*$").unwrap();
+}
+fn is_py_ident(sym: &str) -> bool {
+    PY_IDENT_REGEX.is_match(sym)
+}
+#[test]
+fn test_py_ident() {
+    assert!(is_py_ident("fooBar_23"));
+    assert!(!is_py_ident("34hello"));
+    assert!(!is_py_ident("hello world"));
+}
 
 #[derive(Debug)]
 pub enum TranslateError {
@@ -75,12 +90,28 @@ impl<'a> ScriptInfo<'a> {
             }
         })
     }
-    fn translate_rpc(&mut self, service: &str, rpc: &str, args: &[(String, Expr)], comment: Option<&str>) -> Result<String, TranslateError> {
-        let mut trans_args = Vec::with_capacity(args.len());
-        for arg in args.iter() {
-            trans_args.push(format!("'{}': {}", escape(&arg.0), self.translate_expr(&arg.1)?.0));
+    fn translate_kwargs(&mut self, kwargs: &[(String, Expr)], prefix: &str, wrap_vals: bool) -> Result<String, TranslateError> {
+        let mut ident_args = vec![];
+        let mut non_ident_args = vec![];
+        for arg in kwargs {
+            let val_raw = self.translate_expr(&arg.1)?;
+            let val = if wrap_vals { wrap(val_raw) } else { val_raw.0 };
+            match is_py_ident(&arg.0) {
+                true => ident_args.push(format!("{} = {}", arg.0, val)),
+                false => non_ident_args.push(format!("'{}': {}", escape(&arg.0), val)),
+            }
         }
-        Ok(format!("nb.call('{}', '{}', {{ {} }}){}", escape(service), escape(rpc), Punctuated(trans_args.iter(), ", "), fmt_comment(comment)))
+
+        Ok(match (ident_args.is_empty(), non_ident_args.is_empty()) {
+            (false, false) => format!("{}{}, **{{ {} }}", prefix, Punctuated(ident_args.iter(), ", "), Punctuated(non_ident_args.iter(), ", ")),
+            (false, true) => format!("{}{}", prefix, Punctuated(ident_args.iter(), ", ")),
+            (true, false) => format!("{}**{{ {} }}", prefix, Punctuated(non_ident_args.iter(), ", ")),
+            (true, true) => String::new(),
+        })
+    }
+    fn translate_rpc(&mut self, service: &str, rpc: &str, args: &[(String, Expr)], comment: Option<&str>) -> Result<String, TranslateError> {
+        let args_str = self.translate_kwargs(&args, ", ", false)?;
+        Ok(format!("nothrow(nb.call)('{}', '{}'{}){}", escape(service), escape(rpc), args_str, fmt_comment(comment)))
     }
     fn translate_fn_call(&mut self, function: &FnRef, args: &[Expr], comment: Option<&str>) -> Result<String, TranslateError> {
         let mut trans_args = Vec::with_capacity(args.len());
@@ -204,6 +235,8 @@ impl<'a> ScriptInfo<'a> {
 
             Expr::Scale { .. } => ("(self.scale * 100)".into(), Type::Wrapped),
             Expr::IsVisible { .. } => ("self.visible".into(), Type::Wrapped), // bool is considered wrapped
+
+            Expr::RpcError { .. } => ("(get_error() or '')".into(), Type::Unknown),
         })
     }
     fn translate_stmts(&mut self, stmts: &[Stmt]) -> Result<String, TranslateError> {
@@ -293,15 +326,8 @@ impl<'a> ScriptInfo<'a> {
                     }
                 }
                 Stmt::SendNetworkMessage { target, msg_type, values, comment } => {
-                    let mut targets_str = String::new();
-                    targets_str += "**{ ";
-                    for (i, value) in values.iter().enumerate() {
-                        if i != 0 { targets_str += ", "; }
-                        write!(&mut targets_str, "'{}': {}", escape(&value.0), self.translate_expr(&value.1)?.0).unwrap();
-                    }
-                    targets_str += " }";
-
-                    lines.push(format!("nb.send_message('{}', {}, {}){}", escape(msg_type), self.translate_expr(target)?.0, targets_str, fmt_comment(comment.as_deref())));
+                    let kwargs_str = self.translate_kwargs(&values, ", ", false)?;
+                    lines.push(format!("nb.send_message('{}', {}{}){}", escape(msg_type), self.translate_expr(target)?.0, kwargs_str, fmt_comment(comment.as_deref())));
                 }
                 Stmt::Say { content, comment, duration } | Stmt::Think { content, comment, duration } => match duration {
                     Some(duration) => lines.push(format!("self.say(str({}), duration = {}){}", self.translate_expr(content)?.0, self.translate_expr(duration)?.0, fmt_comment(comment.as_deref()))),

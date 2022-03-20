@@ -1,6 +1,6 @@
 [package]
 name = "nb2pb"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/dragazo/nb2pb"
@@ -21,11 +21,13 @@ name = "nb2pb"
 path = "src/main.rs"
 
 [dependencies]
-# netsblox-ast = "0.1.2"
-netsblox-ast = { path = "../netsblox-ast" }
+netsblox-ast = "0.1.5"
+# netsblox-ast = { path = "../netsblox-ast" }
 serde = "1.0.133"
 serde_json = "1.0.74"
 once_cell = "1.9.0"
+regex = "1.5.5"
+lazy_static = "1.4.0"
 pyo3 = { version = "0.15.1", features = ["extension-module"], optional = true }
 
 [build-dependencies]
