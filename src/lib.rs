@@ -110,7 +110,7 @@ impl<'a> ScriptInfo<'a> {
         })
     }
     fn translate_rpc(&mut self, service: &str, rpc: &str, args: &[(String, Expr)], comment: Option<&str>) -> Result<String, TranslateError> {
-        let args_str = self.translate_kwargs(&args, ", ", false)?;
+        let args_str = self.translate_kwargs(args, ", ", false)?;
         Ok(format!("nothrow(nb.call)('{}', '{}'{}){}", escape(service), escape(rpc), args_str, fmt_comment(comment)))
     }
     fn translate_fn_call(&mut self, function: &FnRef, args: &[Expr], comment: Option<&str>) -> Result<String, TranslateError> {
@@ -128,6 +128,9 @@ impl<'a> ScriptInfo<'a> {
         Ok(match expr {
             Expr::Value(v) => self.translate_value(v)?,
             Expr::Variable { var, .. } => (translate_var(var), Type::Wrapped), // all assignments are wrapped, so we can assume vars are wrapped
+
+            Expr::Closure { .. } => unimplemented!(),
+            Expr::CallClosure { .. } => unimplemented!(),
 
             Expr::This { .. } => ("self".into(), Type::Wrapped), // non-primitives are considered wrapped
             Expr::Entity { trans_name, .. } => (trans_name.into(), Type::Wrapped), // non-primitives are considered wrapped
@@ -245,14 +248,7 @@ impl<'a> ScriptInfo<'a> {
         let mut lines = Vec::with_capacity(stmts.len());
         for stmt in stmts {
             match stmt {
-                Stmt::Assign { vars, value, comment } => {
-                    let mut res = String::new();
-                    for var in vars.iter() {
-                        write!(&mut res, "{} = ", translate_var(var)).unwrap();
-                    }
-                    write!(&mut res, "{}{}", wrap(self.translate_expr(value)?), fmt_comment(comment.as_deref())).unwrap();
-                    lines.push(res);
-                }
+                Stmt::Assign { var, value, comment } => lines.push(format!("{} = {}{}", translate_var(var), wrap(self.translate_expr(value)?), fmt_comment(comment.as_deref()))),
                 Stmt::AddAssign { var, value, comment } => lines.push(format!("{} += {}{}", translate_var(var), wrap(self.translate_expr(value)?), fmt_comment(comment.as_deref()))),
                 Stmt::IndexAssign { list, index, value, comment } => lines.push(format!("{}[{}] = {}{}", wrap(self.translate_expr(list)?), self.translate_expr(index)?.0, self.translate_expr(value)?.0, fmt_comment(comment.as_deref()))),
                 Stmt::Warp { stmts, comment } => {
@@ -326,7 +322,7 @@ impl<'a> ScriptInfo<'a> {
                     }
                 }
                 Stmt::SendNetworkMessage { target, msg_type, values, comment } => {
-                    let kwargs_str = self.translate_kwargs(&values, ", ", false)?;
+                    let kwargs_str = self.translate_kwargs(values, ", ", false)?;
                     lines.push(format!("nb.send_message('{}', {}{}){}", escape(msg_type), self.translate_expr(target)?.0, kwargs_str, fmt_comment(comment.as_deref())));
                 }
                 Stmt::Say { content, comment, duration } | Stmt::Think { content, comment, duration } => match duration {
@@ -393,7 +389,7 @@ struct SpriteInfo {
     scale: f64,
 }
 impl SpriteInfo {
-    fn new(src: &Sprite) -> Self {
+    fn new(src: &Entity) -> Self {
         Self {
             name: src.trans_name.clone(),
             scripts: vec![],
@@ -463,7 +459,7 @@ pub fn translate(source: &str) -> Result<(String, String), TranslateError> {
         .optimize(true)
         .build().unwrap();
 
-    let project = parser.parse(&mut source.as_bytes())?;
+    let project = parser.parse(source)?;
     if project.roles.is_empty() { return Err(TranslateError::NoRoles) }
 
     let mut roles = vec![];
@@ -471,7 +467,7 @@ pub fn translate(source: &str) -> Result<(String, String), TranslateError> {
         let mut role_info = RoleInfo::new(role.name.clone());
         let stage = OnceCell::new();
 
-        for sprite in role.sprites.iter() {
+        for sprite in role.entities.iter() {
             let mut sprite_info = SpriteInfo::new(sprite);
             stage.get_or_init(|| sprite_info.clone());
 

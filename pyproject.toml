@@ -7,7 +7,7 @@ cargo-extra-args = "--features pyo3"
 
 [project]
 name = "nb2pb"
-version = "0.1.5"
+version = "0.1.6"
 requires-python = ">=3.6"
 dependencies = ["cffi"]
 classifiers = [
