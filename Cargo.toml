@@ -1,6 +1,6 @@
 [package]
 name = "nb2pb"
-version = "0.1.8"
+version = "0.1.10"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/dragazo/nb2pb"
