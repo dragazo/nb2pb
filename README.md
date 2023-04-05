@@ -26,5 +26,5 @@ If this is the case, feel free to [submit an issue](https://github.com/dragazo/n
 To build a wheel on the local system for installed versions of CPython and PyPy, run the following command:
 
 ```sh
-maturin build --release --cargo-extra-args="--features pyo3"
+maturin build --release
 ```
