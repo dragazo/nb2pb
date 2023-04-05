@@ -81,13 +81,14 @@ impl<'a> ScriptInfo<'a> {
                 Constant::Pi => ("math.pi".into(), Type::Unknown),
                 Constant::E => ("math.e".into(), Type::Unknown),
             }
-            Value::List(vals) => {
+            Value::List(vals, _) => {
                 let mut items = Vec::with_capacity(vals.len());
                 for val in vals {
                     items.push(self.translate_value(val)?.0);
                 }
                 (format!("[{}]", Punctuated(items.iter(), ", ")), Type::Unknown)
             }
+            Value::Ref(x) => unimplemented!("{x:?}"),
         })
     }
     fn translate_kwargs(&mut self, kwargs: &[(String, Expr)], prefix: &str, wrap_vals: bool) -> Result<String, TranslateError> {
@@ -109,137 +110,136 @@ impl<'a> ScriptInfo<'a> {
             (true, true) => String::new(),
         })
     }
-    fn translate_rpc(&mut self, service: &str, rpc: &str, args: &[(String, Expr)], comment: Option<&str>) -> Result<String, TranslateError> {
+    fn translate_rpc(&mut self, service: &str, rpc: &str, args: &[(String, Expr)], comment_suffix: &str) -> Result<String, TranslateError> {
         let args_str = self.translate_kwargs(args, ", ", false)?;
-        Ok(format!("nothrow(nb.call)('{}', '{}'{}){}", escape(service), escape(rpc), args_str, fmt_comment(comment)))
+        Ok(format!("nothrow(nb.call)('{}', '{}'{}){}", escape(service), escape(rpc), args_str, comment_suffix))
     }
-    fn translate_fn_call(&mut self, function: &FnRef, args: &[Expr], comment: Option<&str>) -> Result<String, TranslateError> {
+    fn translate_fn_call(&mut self, function: &FnRef, args: &[Expr], comment_suffix: &str) -> Result<String, TranslateError> {
         let mut trans_args = Vec::with_capacity(args.len());
         for arg in args.iter() {
             trans_args.push(wrap(self.translate_expr(arg)?));
         }
 
         Ok(match function.location {
-            FnLocation::Global => format!("{}(self, {}){}", function.trans_name, Punctuated(trans_args.iter(), ", "), fmt_comment(comment)),
-            FnLocation::Method => format!("self.{}({}){}", function.trans_name, Punctuated(trans_args.iter(), ", "), fmt_comment(comment)),
+            FnLocation::Global => format!("{}(self, {}){}", function.trans_name, Punctuated(trans_args.iter(), ", "), comment_suffix),
+            FnLocation::Method => format!("self.{}({}){}", function.trans_name, Punctuated(trans_args.iter(), ", "), comment_suffix),
         })
     }
-    fn translate_expr(&mut self, expr: &Expr) -> Result<(String, Type), TranslateError> {
-        Ok(match expr {
-            Expr::Value(v) => self.translate_value(v)?,
-            Expr::Variable { var, .. } => (translate_var(var), Type::Wrapped), // all assignments are wrapped, so we can assume vars are wrapped
-
-            Expr::Closure { .. } => unimplemented!(),
-            Expr::CallClosure { .. } => unimplemented!(),
-
-            Expr::This { .. } => ("self".into(), Type::Wrapped), // non-primitives are considered wrapped
-            Expr::Entity { trans_name, .. } => (trans_name.into(), Type::Wrapped), // non-primitives are considered wrapped
-
-            Expr::ImageOfEntity { entity, .. } => (format!("{}.get_image()", self.translate_expr(entity)?.0), Type::Wrapped), // non-primitives are considered wrapped
-            Expr::ImageOfDrawings { .. } => (format!("{}.get_drawings()", self.stage.name), Type::Wrapped), // non-primitives are considered wrapped
-
-            Expr::IsTouchingEntity { entity, .. } => (format!("self.is_touching({})", self.translate_expr(entity)?.0), Type::Wrapped), // bool is considered wrapped
-            Expr::IsTouchingMouse { .. } => unimplemented!(),
-            Expr::IsTouchingEdge { .. } => unimplemented!(),
-            Expr::IsTouchingDrawings { .. } => unimplemented!(),
-
-            Expr::MakeList { values, .. } => {
-                let mut items = Vec::with_capacity(values.len());
-                for val in values {
-                    items.push(self.translate_expr(val)?.0);
+    fn translate_variadic_bin_expr(&mut self, values: &VariadicInput, mapper: fn((String, Type)) -> (String, Type), single_op: &str, prefix_suffix: (&str, &str), default: fn() -> (String, Type)) -> Result<(String, Type), TranslateError> {
+        match values {
+            VariadicInput::Fixed(values) => match values.as_slice() {
+                [] => Ok(default()),
+                [val] => Ok(self.translate_expr(val)?),
+                [first, rest @ ..] => {
+                    let mut res = String::new();
+                    res.push_str(prefix_suffix.0);
+                    res.push_str(&mapper(self.translate_expr(first)?).0);
+                    for value in rest {
+                        res.push_str(single_op);
+                        res.push_str(&wrap(self.translate_expr(value)?));
+                    }
+                    res.push_str(prefix_suffix.1);
+                    Ok((res, Type::Wrapped))
                 }
-                (format!("[{}]", items.join(", ")), Type::Unknown)
             }
+            VariadicInput::VarArgs(_) => unimplemented!("variadic binary ops ({single_op})"),
+        }
+    }
+    fn translate_expr(&mut self, expr: &Expr) -> Result<(String, Type), TranslateError> {
+        Ok(match &expr.kind {
+            ExprKind::Value(v) => self.translate_value(v)?,
+            ExprKind::Variable { var } => (translate_var(var), Type::Wrapped), // all assignments are wrapped, so we can assume vars are wrapped
 
-            Expr::Neg { value, .. } => (format!("-{}", wrap(self.translate_expr(value)?)), Type::Wrapped),
-            Expr::Not { value, .. } => (format!("snap.lnot({})", self.translate_expr(value)?.0), Type::Wrapped),
-            Expr::Abs { value, .. } => (format!("abs({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::This { .. } => ("self".into(), Type::Wrapped), // non-primitives are considered wrapped
+            ExprKind::Entity { trans_name, .. } => (trans_name.into(), Type::Wrapped), // non-primitives are considered wrapped
 
-            Expr::Add { left, right, .. } => (format!("({} + {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
-            Expr::Sub { left, right, .. } => (format!("({} - {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
-            Expr::Mul { left, right, .. } => (format!("({} * {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
-            Expr::Div { left, right, .. } => (format!("({} / {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
-            Expr::Mod { left, right, .. } => (format!("({} % {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
+            ExprKind::ImageOfEntity { entity } => (format!("{}.get_image()", self.translate_expr(entity)?.0), Type::Wrapped), // non-primitives are considered wrapped
+            ExprKind::ImageOfDrawings { .. } => (format!("{}.get_drawings()", self.stage.name), Type::Wrapped), // non-primitives are considered wrapped
 
-            Expr::Pow { base, power, .. } => (format!("({} ** {})", wrap(self.translate_expr(base)?), wrap(self.translate_expr(power)?)), Type::Wrapped),
-            Expr::Log { value, base, .. } => (format!("snap.log({}, {})", wrap(self.translate_expr(value)?), wrap(self.translate_expr(base)?)), Type::Wrapped),
+            ExprKind::IsTouchingEntity { entity } => (format!("self.is_touching({})", self.translate_expr(entity)?.0), Type::Wrapped), // bool is considered wrapped
 
-            Expr::Sqrt { value, .. } => (format!("snap.sqrt({})", self.translate_expr(value)?.0), Type::Wrapped),
+            ExprKind::MakeList { values } => self.translate_variadic_bin_expr(values, |x| x, ", ", ("[", "]"), || ("[]".into(), Type::Unknown))?,
 
-            Expr::Round { value, .. } => (format!("round({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
-            Expr::Floor { value, .. } => (format!("math.floor({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
-            Expr::Ceil { value, .. } => (format!("math.ceil({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::Neg { value } => (format!("-{}", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::Not { value } => (format!("snap.lnot({})", self.translate_expr(value)?.0), Type::Wrapped),
+            ExprKind::Abs { value } => (format!("abs({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
 
-            Expr::Sin { value, .. } => (format!("snap.sin({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
-            Expr::Cos { value, .. } => (format!("snap.cos({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
-            Expr::Tan { value, .. } => (format!("snap.tan({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::Add { values } => self.translate_variadic_bin_expr(values, |x| x, " + ", ("(", ")"), || ("0".into(), Type::Unknown))?,
+            ExprKind::Mul { values } => self.translate_variadic_bin_expr(values, |x| x, " * ", ("(", ")"), || ("1".into(), Type::Unknown))?,
 
-            Expr::Asin { value, .. } => (format!("snap.asin({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
-            Expr::Acos { value, .. } => (format!("snap.acos({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
-            Expr::Atan { value, .. } => (format!("snap.atan({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::Sub { left, right } => (format!("({} - {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
+            ExprKind::Div { left, right } => (format!("({} / {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
+            ExprKind::Mod { left, right } => (format!("({} % {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
 
-            Expr::And { left, right, .. } => (format!("({} and {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
-            Expr::Or { left, right, .. } => (format!("({} or {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
-            Expr::Conditional { condition, then, otherwise, .. } => {
+            ExprKind::Pow { base, power } => (format!("({} ** {})", wrap(self.translate_expr(base)?), wrap(self.translate_expr(power)?)), Type::Wrapped),
+            ExprKind::Log { value, base } => (format!("snap.log({}, {})", wrap(self.translate_expr(value)?), wrap(self.translate_expr(base)?)), Type::Wrapped),
+
+            ExprKind::Sqrt { value } => (format!("snap.sqrt({})", self.translate_expr(value)?.0), Type::Wrapped),
+
+            ExprKind::Round { value } => (format!("round({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::Floor { value } => (format!("math.floor({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::Ceil { value } => (format!("math.ceil({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+
+            ExprKind::Sin { value } => (format!("snap.sin({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::Cos { value } => (format!("snap.cos({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::Tan { value } => (format!("snap.tan({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+
+            ExprKind::Asin { value } => (format!("snap.asin({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::Acos { value } => (format!("snap.acos({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::Atan { value } => (format!("snap.atan({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+
+            ExprKind::And { left, right } => (format!("({} and {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
+            ExprKind::Or { left, right } => (format!("({} or {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
+            ExprKind::Conditional { condition, then, otherwise } => {
                 let (then, otherwise) = (self.translate_expr(then)?, self.translate_expr(otherwise)?);
                 (format!("({} if {} else {})", then.0, wrap(self.translate_expr(condition)?), otherwise.0), if then.1 == otherwise.1 { then.1 } else { Type::Unknown })
             }
 
-            Expr::Identical { left, right, .. } => (format!("snap.identical({}, {})", self.translate_expr(left)?.0, self.translate_expr(right)?.0), Type::Wrapped), // bool is considered wrapped
-            Expr::Eq { left, right, .. } => (format!("({} == {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
-            Expr::Less { left, right, .. } => (format!("({} < {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
-            Expr::Greater { left, right, .. } => (format!("({} > {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
+            ExprKind::Identical { left, right } => (format!("snap.identical({}, {})", self.translate_expr(left)?.0, self.translate_expr(right)?.0), Type::Wrapped), // bool is considered wrapped
+            ExprKind::Eq { left, right } => (format!("({} == {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
+            ExprKind::Less { left, right } => (format!("({} < {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
+            ExprKind::Greater { left, right } => (format!("({} > {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
 
-            Expr::RandInclusive { a, b, .. } => (format!("snap.rand({}, {})", self.translate_expr(a)?.0, self.translate_expr(b)?.0), Type::Wrapped), // python impl returns wrapped
-            Expr::RangeInclusive { start, stop, .. } => (format!("snap.srange({}, {})", self.translate_expr(start)?.0, self.translate_expr(stop)?.0), Type::Wrapped), // python impl returns wrapped
+            ExprKind::Random { a, b } => (format!("snap.rand({}, {})", self.translate_expr(a)?.0, self.translate_expr(b)?.0), Type::Wrapped), // python impl returns wrapped
+            ExprKind::Range { start, stop } => (format!("snap.srange({}, {})", self.translate_expr(start)?.0, self.translate_expr(stop)?.0), Type::Wrapped), // python impl returns wrapped
 
-            Expr::Listcat { lists, .. } => {
-                let mut trans = Vec::with_capacity(lists.len());
-                for list in lists {
-                    trans.push(self.translate_expr(list)?.0);
-                }
-                (format!("[{}]", Punctuated(trans.iter().map(|s| format!("*{}", s)), ", ")), Type::Unknown)
-            }
-            Expr::Strcat { values, .. } => {
-                let mut trans = Vec::with_capacity(values.len());
-                for list in values {
-                    trans.push(self.translate_expr(list)?.0);
-                }
-                (Punctuated(trans.iter().map(|s| format!("str({})", s)), " + ").to_string(), Type::Unknown)
-            }
+            ExprKind::ListCat { lists } => self.translate_variadic_bin_expr(lists, |x| (format!("*{}", x.0), Type::Unknown), ", ", ("[", "]"), || ("[]".into(), Type::Unknown))?,
+            ExprKind::StrCat { values } => self.translate_variadic_bin_expr(values, |x| (format!("str({})", x.0), Type::Unknown), " + ", ("(", ")"), || ("''".into(), Type::Unknown))?,
 
-            Expr::Listlen { value, .. } | Expr::Strlen { value, .. } => (format!("len({})", self.translate_expr(value)?.0), Type::Unknown), // builtin __len__ can't be overloaded to return wrapped
-            Expr::ListFind { list, value, .. } => (format!("{}.index({})", wrap(self.translate_expr(list)?), self.translate_expr(value)?.0), Type::Wrapped),
-            Expr::ListIndex { list, index, .. } => (format!("{}[{}]", wrap(self.translate_expr(list)?), self.translate_expr(index)?.0), Type::Wrapped),
-            Expr::ListRandIndex { list, .. } => (format!("snap.choice({})", wrap(self.translate_expr(list)?)), Type::Wrapped),
-            Expr::ListLastIndex { list, .. } => (format!("{}[-1]", wrap(self.translate_expr(list)?)), Type::Wrapped),
-            Expr::ListAllButFirst { value, .. } => (format!("{}.all_but_first()", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::ListLength { value } | ExprKind::StrLen { value } => (format!("len({})", self.translate_expr(value)?.0), Type::Unknown), // builtin __len__ can't be overloaded to return wrapped
+            ExprKind::ListFind { list, value } => (format!("{}.index({})", wrap(self.translate_expr(list)?), self.translate_expr(value)?.0), Type::Wrapped),
+            ExprKind::ListGet { list, index } => (format!("{}[{}]", wrap(self.translate_expr(list)?), self.translate_expr(index)?.0), Type::Wrapped),
+            ExprKind::ListGetRandom { list } => (format!("snap.choice({})", wrap(self.translate_expr(list)?)), Type::Wrapped),
+            ExprKind::ListGetLast { list } => (format!("{}[-1]", wrap(self.translate_expr(list)?)), Type::Wrapped),
+            ExprKind::ListCdr { value } => (format!("{}.all_but_first()", wrap(self.translate_expr(value)?)), Type::Wrapped),
 
-            Expr::UnicodeToChar { value, .. } => (format!("snap.get_chr({})", self.translate_expr(value)?.0), Type::Unknown),
-            Expr::CharToUnicode { value, .. } => (format!("snap.get_ord({})", self.translate_expr(value)?.0), Type::Unknown),
+            ExprKind::UnicodeToChar { value } => (format!("snap.get_chr({})", self.translate_expr(value)?.0), Type::Unknown),
+            ExprKind::CharToUnicode { value } => (format!("snap.get_ord({})", self.translate_expr(value)?.0), Type::Unknown),
 
-            Expr::CallRpc { service, rpc, args, .. } => (self.translate_rpc(service, rpc, args, None)?, Type::Unknown),
-            Expr::CallFn { function, args, .. } => (self.translate_fn_call(function, args, None)?, Type::Wrapped),
+            ExprKind::CallRpc { service, rpc, args } => (self.translate_rpc(service, rpc, args, "")?, Type::Unknown),
+            ExprKind::CallFn { function, args } => (self.translate_fn_call(function, args, "")?, Type::Wrapped),
 
-            Expr::XPos { .. } => ("self.x_pos".into(), Type::Unknown),
-            Expr::YPos { .. } => ("self.y_pos".into(), Type::Unknown),
-            Expr::Heading { .. } => ("self.heading".into(), Type::Unknown),
+            ExprKind::XPos { .. } => ("self.x_pos".into(), Type::Unknown),
+            ExprKind::YPos { .. } => ("self.y_pos".into(), Type::Unknown),
+            ExprKind::Heading { .. } => ("self.heading".into(), Type::Unknown),
 
-            Expr::MouseX { .. } => (format!("{}.mouse_pos[0]", self.stage.name), Type::Unknown),
-            Expr::MouseY { .. } => (format!("{}.mouse_pos[1]", self.stage.name), Type::Unknown),
+            ExprKind::MouseX { .. } => (format!("{}.mouse_pos[0]", self.stage.name), Type::Unknown),
+            ExprKind::MouseY { .. } => (format!("{}.mouse_pos[1]", self.stage.name), Type::Unknown),
 
-            Expr::StageWidth { .. } => (format!("{}.width", self.stage.name), Type::Unknown),
-            Expr::StageHeight { .. } => (format!("{}.height", self.stage.name), Type::Unknown),
+            ExprKind::StageWidth { .. } => (format!("{}.width", self.stage.name), Type::Unknown),
+            ExprKind::StageHeight { .. } => (format!("{}.height", self.stage.name), Type::Unknown),
 
-            Expr::Latitude { .. } => (format!("{}.gps_location[0]", self.stage.name), Type::Unknown),
-            Expr::Longitude { .. } => (format!("{}.gps_location[1]", self.stage.name), Type::Unknown),
+            ExprKind::Latitude { .. } => (format!("{}.gps_location[0]", self.stage.name), Type::Unknown),
+            ExprKind::Longitude { .. } => (format!("{}.gps_location[1]", self.stage.name), Type::Unknown),
 
-            Expr::PenDown { .. } => ("self.drawing".into(), Type::Wrapped), // bool is considered wrapped
+            ExprKind::PenDown { .. } => ("self.drawing".into(), Type::Wrapped), // bool is considered wrapped
 
-            Expr::Scale { .. } => ("(self.scale * 100)".into(), Type::Wrapped),
-            Expr::IsVisible { .. } => ("self.visible".into(), Type::Wrapped), // bool is considered wrapped
+            ExprKind::Scale { .. } => ("(self.scale * 100)".into(), Type::Wrapped),
+            ExprKind::IsVisible { .. } => ("self.visible".into(), Type::Wrapped), // bool is considered wrapped
 
-            Expr::RpcError { .. } => ("(get_error() or '')".into(), Type::Unknown),
+            ExprKind::RpcError { .. } => ("(get_error() or '')".into(), Type::Unknown),
+
+            x => unimplemented!("{x:?}"),
         })
     }
     fn translate_stmts(&mut self, stmts: &[Stmt]) -> Result<String, TranslateError> {
@@ -247,114 +247,116 @@ impl<'a> ScriptInfo<'a> {
 
         let mut lines = Vec::with_capacity(stmts.len());
         for stmt in stmts {
-            match stmt {
-                Stmt::Assign { var, value, comment } => lines.push(format!("{} = {}{}", translate_var(var), wrap(self.translate_expr(value)?), fmt_comment(comment.as_deref()))),
-                Stmt::AddAssign { var, value, comment } => lines.push(format!("{} += {}{}", translate_var(var), wrap(self.translate_expr(value)?), fmt_comment(comment.as_deref()))),
-                Stmt::IndexAssign { list, index, value, comment } => lines.push(format!("{}[{}] = {}{}", wrap(self.translate_expr(list)?), self.translate_expr(index)?.0, self.translate_expr(value)?.0, fmt_comment(comment.as_deref()))),
-                Stmt::Warp { stmts, comment } => {
+            let comment = fmt_comment(stmt.info.comment.as_deref());
+            match &stmt.kind {
+                StmtKind::DeclareLocals { vars } => lines.extend(vars.iter().map(|x| format!("{} = snap.wrap(0)", x.trans_name))),
+                StmtKind::Assign { var, value } => lines.push(format!("{} = {}{}", translate_var(var), wrap(self.translate_expr(value)?), comment)),
+                StmtKind::AddAssign { var, value } => lines.push(format!("{} += {}{}", translate_var(var), wrap(self.translate_expr(value)?), comment)),
+                StmtKind::ListAssign { list, index, value } => lines.push(format!("{}[{}] = {}{}", wrap(self.translate_expr(list)?), self.translate_expr(index)?.0, self.translate_expr(value)?.0, comment)),
+                StmtKind::Warp { stmts } => {
                     let code = self.translate_stmts(stmts)?;
-                    lines.push(format!("with Warp():{}\n{}", fmt_comment(comment.as_deref()), indent(&code)));
+                    lines.push(format!("with Warp():{}\n{}", comment, indent(&code)));
                 }
-                Stmt::If { condition, then, comment } => {
+                StmtKind::If { condition, then } => {
                     let condition = wrap(self.translate_expr(condition)?);
                     let then = self.translate_stmts(then)?;
-                    lines.push(format!("if {}:{}\n{}", condition, fmt_comment(comment.as_deref()), indent(&then)));
+                    lines.push(format!("if {}:{}\n{}", condition, comment, indent(&then)));
                 }
-                Stmt::IfElse { condition, then, otherwise, comment } => {
+                StmtKind::IfElse { condition, then, otherwise } => {
                     let condition = wrap(self.translate_expr(condition)?);
                     let then = self.translate_stmts(then)?;
                     let otherwise = self.translate_stmts(otherwise)?;
-                    lines.push(format!("if {}:{}\n{}\nelse:\n{}", condition, fmt_comment(comment.as_deref()), indent(&then), indent(&otherwise)));
+                    lines.push(format!("if {}:{}\n{}\nelse:\n{}", condition, comment, indent(&then), indent(&otherwise)));
                 }
-                Stmt::InfLoop { stmts, comment } => {
+                StmtKind::InfLoop { stmts } => {
                     let code = self.translate_stmts(stmts)?;
-                    lines.push(format!("while True:{}\n{}", fmt_comment(comment.as_deref()), indent(&code)));
+                    lines.push(format!("while True:{}\n{}", comment, indent(&code)));
                 }
-                Stmt::ForLoop { var, start, stop, stmts, comment } => {
+                StmtKind::ForLoop { var, start, stop, stmts } => {
                     let start = self.translate_expr(start)?.0;
                     let stop = self.translate_expr(stop)?.0;
                     let code = self.translate_stmts(stmts)?;
-                    lines.push(format!("for {} in snap.sxrange({}, {}):{}\n{}", var.trans_name, start, stop, fmt_comment(comment.as_deref()), indent(&code)));
+                    lines.push(format!("for {} in snap.sxrange({}, {}):{}\n{}", var.trans_name, start, stop, comment, indent(&code)));
                 }
-                Stmt::ForeachLoop { var, items, stmts, comment } => {
+                StmtKind::ForeachLoop { var, items, stmts } => {
                     let items = wrap(self.translate_expr(items)?);
                     let code = self.translate_stmts(stmts)?;
-                    lines.push(format!("for {} in {}:{}\n{}", var.trans_name, items, fmt_comment(comment.as_deref()), indent(&code)));
+                    lines.push(format!("for {} in {}:{}\n{}", var.trans_name, items, comment, indent(&code)));
                 }
-                Stmt::Repeat { times, stmts, comment } => {
+                StmtKind::Repeat { times, stmts } => {
                     let times = wrap(self.translate_expr(times)?);
                     let code = self.translate_stmts(stmts)?;
-                    lines.push(format!("for _ in range(+{}):{}\n{}", times, fmt_comment(comment.as_deref()), indent(&code)));
+                    lines.push(format!("for _ in range(+{}):{}\n{}", times, comment, indent(&code)));
                 }
-                Stmt::UntilLoop { condition, stmts, comment } => {
+                StmtKind::UntilLoop { condition, stmts } => {
                     let condition = wrap(self.translate_expr(condition)?);
                     let code = self.translate_stmts(stmts)?;
-                    lines.push(format!("while not {}:{}\n{}", condition, fmt_comment(comment.as_deref()), indent(&code)));
+                    lines.push(format!("while not {}:{}\n{}", condition, comment, indent(&code)));
                 }
-                Stmt::SwitchCostume { costume, comment } => {
+                StmtKind::SwitchCostume { costume } => {
                     let costume = match costume {
                         Some(v) => self.translate_expr(v)?.0,
                         None => "None".into(),
                     };
-                    lines.push(format!("self.costume = {}{}", costume, fmt_comment(comment.as_deref())));
+                    lines.push(format!("self.costume = {}{}", costume, comment));
                 }
-                Stmt::ChangePos { dx, dy, comment } => {
-                    let mut comment = comment.as_deref();
+                StmtKind::ChangePos { dx, dy } => {
+                    let mut comment = Some(comment.as_str());
                     for (var, val) in [("x_pos", dx), ("y_pos", dy)] {
                         if let Some(val) = val {
-                            lines.push(format!("self.{} += {}{}", var, self.translate_expr(val)?.0, fmt_comment(comment.take())));
+                            lines.push(format!("self.{} += {}{}", var, self.translate_expr(val)?.0, comment.take().unwrap_or("")));
                         }
                     }
                 }
-                Stmt::SetPos { x, y, comment } => match (x, y) {
-                    (Some(x), Some(y)) => lines.push(format!("self.pos = ({}, {}){}", self.translate_expr(x)?.0, self.translate_expr(y)?.0, fmt_comment(comment.as_deref()))),
-                    (Some(x), None) => lines.push(format!("self.x_pos = {}{}", self.translate_expr(x)?.0, fmt_comment(comment.as_deref()))),
-                    (None, Some(y)) => lines.push(format!("self.y_pos = {}{}", self.translate_expr(y)?.0, fmt_comment(comment.as_deref()))),
+                StmtKind::SetPos { x, y } => match (x, y) {
+                    (Some(x), Some(y)) => lines.push(format!("self.pos = ({}, {}){}", self.translate_expr(x)?.0, self.translate_expr(y)?.0, comment)),
+                    (Some(x), None) => lines.push(format!("self.x_pos = {}{}", self.translate_expr(x)?.0, comment)),
+                    (None, Some(y)) => lines.push(format!("self.y_pos = {}{}", self.translate_expr(y)?.0, comment)),
                     (None, None) => (), // the parser would never emit this, but it's not like it would matter...
                 }
-                Stmt::SendLocalMessage { target, msg_type, wait, comment } => {
-                    if *wait { unimplemented!() }
-                    if target.is_some() { unimplemented!() }
+                StmtKind::SendLocalMessage { target, msg_type, wait } => {
+                    if *wait { unimplemented!("blocking local messages") }
+                    if target.is_some() { unimplemented!("send local message to target") }
 
-                    match msg_type {
-                        Expr::Value(Value::String(msg_type)) => lines.push(format!("nb.send_message('local::{}'){}", escape(msg_type), fmt_comment(comment.as_deref()))),
-                        _  => lines.push(format!("nb.send_message('local::' + str({})){}", self.translate_expr(msg_type)?.0, fmt_comment(comment.as_deref()))),
+                    match &msg_type.kind {
+                        ExprKind::Value(Value::String(msg_type)) => lines.push(format!("nb.send_message('local::{}'){}", escape(msg_type), comment)),
+                        _  => lines.push(format!("nb.send_message('local::' + str({})){}", self.translate_expr(msg_type)?.0, comment)),
                     }
                 }
-                Stmt::SendNetworkMessage { target, msg_type, values, comment } => {
+                StmtKind::SendNetworkMessage { target, msg_type, values } => {
                     let kwargs_str = self.translate_kwargs(values, ", ", false)?;
-                    lines.push(format!("nb.send_message('{}', {}{}){}", escape(msg_type), self.translate_expr(target)?.0, kwargs_str, fmt_comment(comment.as_deref())));
+                    lines.push(format!("nb.send_message('{}', {}{}){}", escape(msg_type), self.translate_expr(target)?.0, kwargs_str, comment));
                 }
-                Stmt::Say { content, comment, duration } | Stmt::Think { content, comment, duration } => match duration {
-                    Some(duration) => lines.push(format!("self.say(str({}), duration = {}){}", self.translate_expr(content)?.0, self.translate_expr(duration)?.0, fmt_comment(comment.as_deref()))),
-                    None => lines.push(format!("self.say(str({})){}", self.translate_expr(content)?.0, fmt_comment(comment.as_deref()))),
+                StmtKind::Say { content, duration } | StmtKind::Think { content, duration } => match duration {
+                    Some(duration) => lines.push(format!("self.say(str({}), duration = {}){}", self.translate_expr(content)?.0, self.translate_expr(duration)?.0, comment)),
+                    None => lines.push(format!("self.say(str({})){}", self.translate_expr(content)?.0, comment)),
                 }
-                Stmt::Push { list, value, comment } => lines.push(format!("{}.append({}){}", wrap(self.translate_expr(list)?), wrap(self.translate_expr(value)?), fmt_comment(comment.as_deref()))),
-                Stmt::Pop { list, comment } => lines.push(format!("{}.pop(){}", wrap(self.translate_expr(list)?), fmt_comment(comment.as_deref()))),
-                Stmt::RemoveAt { list, index, comment } => lines.push(format!("del {}[{}]{}", wrap(self.translate_expr(list)?), self.translate_expr(index)?.0, fmt_comment(comment.as_deref()))),
-                Stmt::RemoveAll { list, comment } => lines.push(format!("{}.clear(){}", self.translate_expr(list)?.0, fmt_comment(comment.as_deref()))),
-                Stmt::ChangePenSize { amount, comment } => lines.push(format!("self.pen_size += {}{}", self.translate_expr(amount)?.0, fmt_comment(comment.as_deref()))),
-                Stmt::SetPenSize { value, comment } => lines.push(format!("self.pen_size = {}{}", self.translate_expr(value)?.0, fmt_comment(comment.as_deref()))),
-                Stmt::SetVisible { value, comment } => lines.push(format!("self.visible = {}{}", if *value { "True" } else { "False" }, fmt_comment(comment.as_deref()))),
-                Stmt::WaitUntil { condition, comment } => lines.push(format!("while not {}:{}\n    time.sleep(0.05)", wrap(self.translate_expr(condition)?), fmt_comment(comment.as_deref()))),
-                Stmt::BounceOffEdge { comment } => lines.push(format!("self.keep_on_stage(bounce = True){}", fmt_comment(comment.as_deref()))),
-                Stmt::Sleep { seconds, comment } => lines.push(format!("time.sleep(+{}){}", wrap(self.translate_expr(seconds)?), fmt_comment(comment.as_deref()))),
-                Stmt::Goto { target, comment } => lines.push(format!("self.goto({}){}", self.translate_expr(target)?.0, fmt_comment(comment.as_deref()))),
-                Stmt::RunRpc { service, rpc, args, comment } => lines.push(self.translate_rpc(service, rpc, args, comment.as_deref())?),
-                Stmt::RunFn { function, args, comment } => lines.push(self.translate_fn_call(function, args, comment.as_deref())?),
-                Stmt::Forward { distance, comment } => lines.push(format!("self.forward({}){}", self.translate_expr(distance)?.0, fmt_comment(comment.as_deref()))),
-                Stmt::TurnRight { angle, comment } => lines.push(format!("self.turn_right({}){}", self.translate_expr(angle)?.0, fmt_comment(comment.as_deref()))),
-                Stmt::TurnLeft { angle, comment } => lines.push(format!("self.turn_left({}){}", self.translate_expr(angle)?.0, fmt_comment(comment.as_deref()))),
-                Stmt::SetHeading { value, comment } => lines.push(format!("self.heading = {}{}", self.translate_expr(value)?.0, fmt_comment(comment.as_deref()))),
-                Stmt::Return { value, comment } => lines.push(format!("return {}{}", wrap(self.translate_expr(value)?), fmt_comment(comment.as_deref()))),
-                Stmt::Stamp { comment } => lines.push(format!("self.stamp(){}", fmt_comment(comment.as_deref()))),
-                Stmt::Write { content, font_size, comment } => lines.push(format!("self.write({}, size = {}){}", self.translate_expr(content)?.0, self.translate_expr(font_size)?.0, fmt_comment(comment.as_deref()))),
-                Stmt::PenDown { comment } => lines.push(format!("self.drawing = True{}", fmt_comment(comment.as_deref()))),
-                Stmt::PenUp { comment } => lines.push(format!("self.drawing = False{}", fmt_comment(comment.as_deref()))),
-                Stmt::PenClear { comment } => lines.push(format!("{}.clear_drawings(){}", self.stage.name, fmt_comment(comment.as_deref()))),
-                Stmt::SetPenColor { color, comment } => lines.push(format!("self.pen_color = '#{:02x}{:02x}{:02x}'{}", color.0, color.1, color.2, fmt_comment(comment.as_deref()))),
-                Stmt::ChangeScalePercent { amount, comment } => lines.push(format!("self.scale += {}{}", self.translate_expr(amount)?.0, fmt_comment(comment.as_deref()))),
-                Stmt::SetScalePercent { value, comment } => lines.push(format!("self.scale = {}{}", self.translate_expr(value)?.0, fmt_comment(comment.as_deref()))),
+                StmtKind::ListInsertLast { list, value } => lines.push(format!("{}.append({}){}", wrap(self.translate_expr(list)?), wrap(self.translate_expr(value)?), comment)),
+                StmtKind::ListRemoveLast { list } => lines.push(format!("{}.pop(){}", wrap(self.translate_expr(list)?), comment)),
+                StmtKind::ListRemove { list, index } => lines.push(format!("del {}[{}]{}", wrap(self.translate_expr(list)?), self.translate_expr(index)?.0, comment)),
+                StmtKind::ListRemoveAll { list } => lines.push(format!("{}.clear(){}", self.translate_expr(list)?.0, comment)),
+                StmtKind::ChangePenSize { amount } => lines.push(format!("self.pen_size += {}{}", self.translate_expr(amount)?.0, comment)),
+                StmtKind::SetPenSize { value } => lines.push(format!("self.pen_size = {}{}", self.translate_expr(value)?.0, comment)),
+                StmtKind::SetVisible { value } => lines.push(format!("self.visible = {}{}", if *value { "True" } else { "False" }, comment)),
+                StmtKind::WaitUntil { condition } => lines.push(format!("while not {}:{}\n    time.sleep(0.05)", wrap(self.translate_expr(condition)?), comment)),
+                StmtKind::BounceOffEdge => lines.push(format!("self.keep_on_stage(bounce = True){}", comment)),
+                StmtKind::Sleep { seconds } => lines.push(format!("time.sleep(+{}){}", wrap(self.translate_expr(seconds)?), comment)),
+                StmtKind::Goto { target } => lines.push(format!("self.goto({}){}", self.translate_expr(target)?.0, comment)),
+                StmtKind::RunRpc { service, rpc, args } => lines.push(self.translate_rpc(service, rpc, args, &comment)?),
+                StmtKind::RunFn { function, args } => lines.push(self.translate_fn_call(function, args, &comment)?),
+                StmtKind::Forward { distance } => lines.push(format!("self.forward({}){}", self.translate_expr(distance)?.0, comment)),
+                StmtKind::TurnRight { angle } => lines.push(format!("self.turn_right({}){}", self.translate_expr(angle)?.0, comment)),
+                StmtKind::TurnLeft { angle } => lines.push(format!("self.turn_left({}){}", self.translate_expr(angle)?.0, comment)),
+                StmtKind::SetHeading { value } => lines.push(format!("self.heading = {}{}", self.translate_expr(value)?.0, comment)),
+                StmtKind::Return { value } => lines.push(format!("return {}{}", wrap(self.translate_expr(value)?), comment)),
+                StmtKind::Stamp => lines.push(format!("self.stamp(){}", comment)),
+                StmtKind::Write { content, font_size } => lines.push(format!("self.write({}, size = {}){}", self.translate_expr(content)?.0, self.translate_expr(font_size)?.0, comment)),
+                StmtKind::PenDown => lines.push(format!("self.drawing = True{}", comment)),
+                StmtKind::PenUp => lines.push(format!("self.drawing = False{}", comment)),
+                StmtKind::PenClear => lines.push(format!("{}.clear_drawings(){}", self.stage.name, comment)),
+                StmtKind::SetPenColor { color } => lines.push(format!("self.pen_color = '#{:02x}{:02x}{:02x}'{}", color.0, color.1, color.2, comment)),
+                StmtKind::ChangeScalePercent { amount } => lines.push(format!("self.scale += {}{}", self.translate_expr(amount)?.0, comment)),
+                StmtKind::SetScalePercent { value } => lines.push(format!("self.scale = {}{}", self.translate_expr(value)?.0, comment)),
                 x => panic!("{:?}", x),
             }
         }
@@ -406,18 +408,19 @@ impl SpriteInfo {
         }
     }
     fn translate_hat(&mut self, hat: &Hat, stage: &SpriteInfo) -> Result<String, TranslateError> {
-        Ok(match hat {
-            Hat::OnFlag { comment } => format!("@onstart(){}\ndef my_onstart_{}(self):\n", fmt_comment(comment.as_deref()), self.scripts.len() + 1),
-            Hat::OnKey { key, comment } => format!("@onkey('{}'){}\ndef my_onkey_{}(self):\n", key, fmt_comment(comment.as_deref()), self.scripts.len() + 1),
-            Hat::MouseDown { comment } => format!("@onmouse('down'){}\ndef my_onmouse_{}(self, x, y):\n", fmt_comment(comment.as_deref()), self.scripts.len() + 1),
-            Hat::MouseUp { comment } => format!("@onmouse('up'){}\ndef my_onmouse_{}(self, x, y):\n", fmt_comment(comment.as_deref()), self.scripts.len() + 1),
-            Hat::MouseEnter { .. } => return Err(TranslateError::UnsupportedBlock("mouseenter interactions are not currently supported")),
-            Hat::MouseLeave { .. } => return Err(TranslateError::UnsupportedBlock("mouseleave interactions are not currently supported")),
-            Hat::ScrollDown { comment } => format!("@onmouse('scroll-down'){}\ndef my_onmouse_{}(self, x, y):\n", fmt_comment(comment.as_deref()), self.scripts.len() + 1),
-            Hat::ScrollUp { comment } => format!("@onmouse('scroll-up'){}\ndef my_onmouse_{}(self, x, y):\n", fmt_comment(comment.as_deref()), self.scripts.len() + 1),
-            Hat::Dropped { .. } => return Err(TranslateError::UnsupportedBlock("drop interactions are not currently supported")),
-            Hat::Stopped { .. } => return Err(TranslateError::UnsupportedBlock("stop interactions are not currently supported")),
-            Hat::When { condition, comment } => {
+        let comment = fmt_comment(hat.info.comment.as_deref());
+        Ok(match &hat.kind {
+            HatKind::OnFlag => format!("@onstart(){}\ndef my_onstart_{}(self):\n", comment, self.scripts.len() + 1),
+            HatKind::OnKey { key } => format!("@onkey('{}'){}\ndef my_onkey_{}(self):\n", key, comment, self.scripts.len() + 1),
+            HatKind::MouseDown => format!("@onmouse('down'){}\ndef my_onmouse_{}(self, x, y):\n", comment, self.scripts.len() + 1),
+            HatKind::MouseUp => format!("@onmouse('up'){}\ndef my_onmouse_{}(self, x, y):\n", comment, self.scripts.len() + 1),
+            HatKind::MouseEnter => return Err(TranslateError::UnsupportedBlock("mouseenter interactions are not currently supported")),
+            HatKind::MouseLeave => return Err(TranslateError::UnsupportedBlock("mouseleave interactions are not currently supported")),
+            HatKind::ScrollDown => format!("@onmouse('scroll-down'){}\ndef my_onmouse_{}(self, x, y):\n", comment, self.scripts.len() + 1),
+            HatKind::ScrollUp => format!("@onmouse('scroll-up'){}\ndef my_onmouse_{}(self, x, y):\n", comment, self.scripts.len() + 1),
+            HatKind::Dropped => return Err(TranslateError::UnsupportedBlock("drop interactions are not currently supported")),
+            HatKind::Stopped => return Err(TranslateError::UnsupportedBlock("stop interactions are not currently supported")),
+            HatKind::When { condition } => {
                 format!(r#"@onstart(){comment}
 def my_onstart{idx}(self):
     while True:
@@ -430,15 +433,15 @@ def my_onstart{idx}(self):
             print(traceback.format_exc(), file = sys.stderr)
 def my_oncondition{idx}(self):
 "#,
-                comment = fmt_comment(comment.as_deref()),
+                comment = comment,
                 idx = self.scripts.len() + 1,
                 condition = wrap(ScriptInfo::new(stage).translate_expr(condition)?))
             }
-            Hat::LocalMessage { msg_type, comment } => {
-                format!("@nb.on_message('local::{}'){}\ndef my_on_message_{}(self, **kwargs):\n", escape(msg_type), fmt_comment(comment.as_deref()), self.scripts.len() + 1)
+            HatKind::LocalMessage { msg_type } => {
+                format!("@nb.on_message('local::{}'){}\ndef my_on_message_{}(self, **kwargs):\n", escape(msg_type), comment, self.scripts.len() + 1)
             }
-            Hat::NetworkMessage { msg_type, fields, comment } => {
-                let mut res = format!("@nb.on_message('{}'){}\ndef my_on_message_{}(self, **kwargs):\n", escape(msg_type), fmt_comment(comment.as_deref()), self.scripts.len() + 1);
+            HatKind::NetworkMessage { msg_type, fields } => {
+                let mut res = format!("@nb.on_message('{}'){}\ndef my_on_message_{}(self, **kwargs):\n", escape(msg_type), comment, self.scripts.len() + 1);
                 for field in fields {
                     writeln!(&mut res, "    {} = snap.wrap(kwargs['{}'])", field.trans_name, escape(&field.name)).unwrap();
                 }
@@ -453,11 +456,12 @@ def my_oncondition{idx}(self):
 ///
 /// On success, returns the project name and project json content as a tuple.
 pub fn translate(source: &str) -> Result<(String, String), TranslateError> {
-    let parser = ParserBuilder::default()
-        .name_transformer(Rc::new(&c_ident))
-        .adjust_to_zero_index(true)
-        .optimize(true)
-        .build().unwrap();
+    let parser = Parser {
+        name_transformer: Rc::new(&c_ident),
+        adjust_to_zero_index: true,
+        optimize: true,
+        ..Default::default()
+    };
 
     let project = parser.parse(source)?;
     if project.roles.is_empty() { return Err(TranslateError::NoRoles) }
@@ -472,15 +476,15 @@ pub fn translate(source: &str) -> Result<(String, String), TranslateError> {
             stage.get_or_init(|| sprite_info.clone());
 
             for costume in sprite.costumes.iter() {
-                let content = match &costume.value {
+                let content = match &costume.init {
                     Value::String(s) => s,
                     _ => panic!(), // the parser lib would never do this
                 };
-                sprite_info.costumes.push((costume.trans_name.clone(), content.clone()));
+                sprite_info.costumes.push((costume.def.trans_name.clone(), content.clone()));
             }
             for field in sprite.fields.iter() {
-                let value = wrap(ScriptInfo::new(stage.get().unwrap()).translate_value(&field.value)?);
-                sprite_info.fields.push((field.trans_name.clone(), value));
+                let value = wrap(ScriptInfo::new(stage.get().unwrap()).translate_value(&field.init)?);
+                sprite_info.fields.push((field.def.trans_name.clone(), value));
             }
             for script in sprite.scripts.iter() {
                 let func_def = match script.hat.as_ref() {
@@ -499,8 +503,8 @@ pub fn translate(source: &str) -> Result<(String, String), TranslateError> {
         let mut content = String::new();
         content += "from netsblox import snap\n\n";
         for global in role.globals.iter() {
-            let value = wrap(ScriptInfo::new(stage.get().unwrap()).translate_value(&global.value)?);
-            writeln!(&mut content, "{} = {}", global.trans_name, value).unwrap();
+            let value = wrap(ScriptInfo::new(stage.get().unwrap()).translate_value(&global.init)?);
+            writeln!(&mut content, "{} = {}", global.def.trans_name, value).unwrap();
         }
         if !role.globals.is_empty() { content.push('\n') }
         for func in role.funcs.iter() {
