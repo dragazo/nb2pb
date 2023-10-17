@@ -3,3 +3,4 @@ Cargo.lock
 *.xml
 *.json
 .ds_store
+Cargo.lock
