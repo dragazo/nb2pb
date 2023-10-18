@@ -167,7 +167,7 @@ impl<'a> ScriptInfo<'a> {
                         (format!("({})", trans.join(" + ")), Type::Wrapped)
                     }
                 }
-                _ => (format!("sum({})", wrap(self.translate_expr(values)?)), Type::Wrapped),
+                _ => (format!("sum({})", wrap(self.translate_expr(values)?)), Type::Unknown),
             }
             ExprKind::Mul { values } => match &values.kind {
                 ExprKind::Value(Value::List(values, _)) => match values.as_slice() {

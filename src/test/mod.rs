@@ -43,7 +43,7 @@ def foo():
     bar = snap.wrap(0)
     bar = (snap.wrap('1') + snap.wrap('4'))
     bar = (snap.wrap('1') + snap.wrap('4') + snap.wrap('7'))
-    bar = sum(baz())
+    bar = snap.wrap(sum(baz()))
     bar = (snap.wrap('6') - snap.wrap('3'))
     bar = (snap.wrap('6') * snap.wrap('2'))
     bar = (snap.wrap('6') * snap.wrap('2') * snap.wrap('8'))
