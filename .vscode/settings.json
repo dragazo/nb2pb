@@ -1,0 +1,24 @@
+{
+    "cSpell.ignoreWords": [
+        "Blox",
+        "Listcat",
+        "Listlen",
+        "funcs",
+        "kwargs",
+        "mouseenter",
+        "mouseleave",
+        "netsblox",
+        "nothrow",
+        "oncondition",
+        "onkey",
+        "onmouse",
+        "onstart",
+        "traceback",
+        "unsync",
+        "vals"
+    ],
+    "cSpell.words": [
+        "isinstance",
+        "lnot"
+    ]
+}

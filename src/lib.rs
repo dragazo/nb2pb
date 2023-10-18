@@ -15,6 +15,9 @@ use regex::Regex;
 pub use netsblox_ast::Error as ParseError;
 use netsblox_ast::{*, util::*};
 
+#[cfg(test)]
+mod test;
+
 lazy_static! {
     static ref PY_IDENT_REGEX: Regex = Regex::new(r"^[_a-zA-Z][_a-zA-Z0-9]*$").unwrap();
 }
@@ -39,6 +42,7 @@ pub enum TranslateError {
 
     Upvars,
     AnyMessage,
+    RingTypeQuery,
 }
 impl From<Box<Error>> for TranslateError { fn from(e: Box<Error>) -> Self { Self::Parse(e) } }
 
@@ -57,7 +61,10 @@ enum Type {
 fn wrap(val: (String, Type)) -> String {
     match &val.1 {
         Type::Wrapped => val.0,
-        Type::Unknown => format!("snap.wrap({})", val.0),
+        Type::Unknown => match val.0.starts_with('(') && val.0.ends_with(')') {
+            true => format!("snap.wrap{}", val.0),
+            false => format!("snap.wrap({})", val.0),
+        }
     }
 }
 
@@ -126,7 +133,7 @@ impl<'a> ScriptInfo<'a> {
         }
 
         Ok(match function.location {
-            FnLocation::Global => format!("{}(self, {})", function.trans_name, Punctuated(trans_args.iter(), ", ")),
+            FnLocation::Global => format!("{}({})", function.trans_name, Punctuated(trans_args.iter(), ", ")),
             FnLocation::Method => format!("self.{}({})", function.trans_name, Punctuated(trans_args.iter(), ", ")),
         })
     }
@@ -151,34 +158,40 @@ impl<'a> ScriptInfo<'a> {
             ExprKind::Neg { value } => (format!("-{}", wrap(self.translate_expr(value)?)), Type::Wrapped),
             ExprKind::Not { value } => (format!("snap.lnot({})", self.translate_expr(value)?.0), Type::Wrapped),
             ExprKind::Abs { value } => (format!("abs({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::Sign { value } => (format!("snap.sign({})", self.translate_expr(value)?.0), Type::Wrapped),
+
+            ExprKind::Atan2 { y, x } => (format!("snap.atan2({}, {})", self.translate_expr(y)?.0, self.translate_expr(x)?.0), Type::Wrapped),
 
             ExprKind::Add { values } => match &values.kind {
-                ExprKind::MakeList { values } => match values.as_slice() {
+                ExprKind::Value(Value::List(values, _)) => match values.as_slice() {
                     [] => ("0".into(), Type::Unknown),
                     _ => {
-                        let trans = values.iter().map(|x| Ok(self.translate_expr(x)?.0)).collect::<Result<Vec<_>,TranslateError>>()?;
+                        let trans = values.iter().map(|x| Ok(wrap(self.translate_value(x)?))).collect::<Result<Vec<_>,TranslateError>>()?;
                         (format!("({})", trans.join(" + ")), Type::Wrapped)
                     }
                 }
                 _ => (format!("sum({})", wrap(self.translate_expr(values)?)), Type::Wrapped),
             }
             ExprKind::Mul { values } => match &values.kind {
-                ExprKind::MakeList { values } => match values.as_slice() {
+                ExprKind::Value(Value::List(values, _)) => match values.as_slice() {
                     [] => ("1".into(), Type::Unknown),
                     _ => {
-                        let trans = values.iter().map(|x| Ok(self.translate_expr(x)?.0)).collect::<Result<Vec<_>,TranslateError>>()?;
+                        let trans = values.iter().map(|x| Ok(wrap(self.translate_value(x)?))).collect::<Result<Vec<_>,TranslateError>>()?;
                         (format!("({})", trans.join(" * ")), Type::Wrapped)
                     }
                 }
                 _ => (format!("snap.prod({})", wrap(self.translate_expr(values)?)), Type::Wrapped),
             }
 
+            ExprKind::Min { values } => (format!("min({})", wrap(self.translate_expr(values)?)), Type::Wrapped),
+            ExprKind::Max { values } => (format!("max({})", wrap(self.translate_expr(values)?)), Type::Wrapped),
+
             ExprKind::Sub { left, right } => (format!("({} - {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
             ExprKind::Div { left, right } => (format!("({} / {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
             ExprKind::Mod { left, right } => (format!("({} % {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
 
             ExprKind::Pow { base, power } => (format!("({} ** {})", wrap(self.translate_expr(base)?), wrap(self.translate_expr(power)?)), Type::Wrapped),
-            ExprKind::Log { value, base } => (format!("snap.log({}, {})", wrap(self.translate_expr(value)?), wrap(self.translate_expr(base)?)), Type::Wrapped),
+            ExprKind::Log { value, base } => (format!("snap.log({}, {})", self.translate_expr(value)?.0, self.translate_expr(base)?.0), Type::Wrapped),
 
             ExprKind::Sqrt { value } => (format!("snap.sqrt({})", self.translate_expr(value)?.0), Type::Wrapped),
 
@@ -186,13 +199,13 @@ impl<'a> ScriptInfo<'a> {
             ExprKind::Floor { value } => (format!("math.floor({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
             ExprKind::Ceil { value } => (format!("math.ceil({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
 
-            ExprKind::Sin { value } => (format!("snap.sin({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
-            ExprKind::Cos { value } => (format!("snap.cos({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
-            ExprKind::Tan { value } => (format!("snap.tan({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::Sin { value } => (format!("snap.sin({})", self.translate_expr(value)?.0), Type::Wrapped),
+            ExprKind::Cos { value } => (format!("snap.cos({})", self.translate_expr(value)?.0), Type::Wrapped),
+            ExprKind::Tan { value } => (format!("snap.tan({})", self.translate_expr(value)?.0), Type::Wrapped),
 
-            ExprKind::Asin { value } => (format!("snap.asin({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
-            ExprKind::Acos { value } => (format!("snap.acos({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
-            ExprKind::Atan { value } => (format!("snap.atan({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::Asin { value } => (format!("snap.asin({})", self.translate_expr(value)?.0), Type::Wrapped),
+            ExprKind::Acos { value } => (format!("snap.acos({})", self.translate_expr(value)?.0), Type::Wrapped),
+            ExprKind::Atan { value } => (format!("snap.atan({})", self.translate_expr(value)?.0), Type::Wrapped),
 
             ExprKind::And { left, right } => (format!("({} and {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
             ExprKind::Or { left, right } => (format!("({} or {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
@@ -202,29 +215,55 @@ impl<'a> ScriptInfo<'a> {
             }
 
             ExprKind::Identical { left, right } => (format!("snap.identical({}, {})", self.translate_expr(left)?.0, self.translate_expr(right)?.0), Type::Wrapped), // bool is considered wrapped
-            ExprKind::Eq { left, right } => (format!("({} == {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
+
             ExprKind::Less { left, right } => (format!("({} < {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
+            ExprKind::LessEq { left, right } => (format!("({} <= {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
+            ExprKind::Eq { left, right } => (format!("({} == {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
+            ExprKind::Neq { left, right } => (format!("({} != {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
             ExprKind::Greater { left, right } => (format!("({} > {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
+            ExprKind::GreaterEq { left, right } => (format!("({} >= {})", wrap(self.translate_expr(left)?), wrap(self.translate_expr(right)?)), Type::Wrapped),
 
             ExprKind::Random { a, b } => (format!("snap.rand({}, {})", self.translate_expr(a)?.0, self.translate_expr(b)?.0), Type::Wrapped), // python impl returns wrapped
             ExprKind::Range { start, stop } => (format!("snap.srange({}, {})", self.translate_expr(start)?.0, self.translate_expr(stop)?.0), Type::Wrapped), // python impl returns wrapped
 
+            ExprKind::TextSplit { text, mode } => match mode {
+                TextSplitMode::Custom(x) => (format!("snap.split({}, {})", self.translate_expr(text)?.0, self.translate_expr(x)?.0), Type::Wrapped),
+                TextSplitMode::LF => (format!("snap.split({}, '\\n')", self.translate_expr(text)?.0), Type::Wrapped),
+                TextSplitMode::CR => (format!("snap.split({}, '\\r')", self.translate_expr(text)?.0), Type::Wrapped),
+                TextSplitMode::Tab => (format!("snap.split({}, '\\t')", self.translate_expr(text)?.0), Type::Wrapped),
+                TextSplitMode::Letter => (format!("snap.split({}, '')", self.translate_expr(text)?.0), Type::Wrapped),
+                TextSplitMode::Word => (format!("snap.split_words({})", self.translate_expr(text)?.0), Type::Wrapped),
+                TextSplitMode::Csv => (format!("snap.split_csv({})", self.translate_expr(text)?.0), Type::Wrapped),
+                TextSplitMode::Json => (format!("snap.split_json({})", self.translate_expr(text)?.0), Type::Wrapped),
+            }
+
+            ExprKind::TypeQuery { value, ty } => match ty {
+                ValueType::Bool => (format!("snap.is_bool({})", self.translate_expr(value)?.0), Type::Wrapped),
+                ValueType::Text => (format!("snap.is_text({})", self.translate_expr(value)?.0), Type::Wrapped),
+                ValueType::Number => (format!("snap.is_number({})", self.translate_expr(value)?.0), Type::Wrapped),
+                ValueType::List => (format!("snap.is_list({})", self.translate_expr(value)?.0), Type::Wrapped),
+                ValueType::Sprite => (format!("snap.is_sprite({})", self.translate_expr(value)?.0), Type::Wrapped),
+                ValueType::Costume => (format!("snap.is_costume({})", self.translate_expr(value)?.0), Type::Wrapped),
+                ValueType::Sound => (format!("snap.is_sound({})", self.translate_expr(value)?.0), Type::Wrapped),
+                ValueType::Command | ValueType::Reporter | ValueType::Predicate => return Err(TranslateError::RingTypeQuery),
+            }
+
             ExprKind::ListCat { lists } => match &lists.kind {
-                ExprKind::MakeList { values } => {
-                    let trans = values.iter().map(|x| Ok(format!("*{}", self.translate_expr(x)?.0))).collect::<Result<Vec<_>,TranslateError>>()?;
+                ExprKind::Value(Value::List(values, _)) => {
+                    let trans = values.iter().map(|x| Ok(format!("*{}", self.translate_value(x)?.0))).collect::<Result<Vec<_>,TranslateError>>()?;
                     (format!("[{}]", trans.join(", ")), Type::Unknown)
                 }
                 _ => (format!("snap.append({})", self.translate_expr(lists)?.0), Type::Unknown),
             }
             ExprKind::StrCat { values } => match &values.kind {
-                ExprKind::MakeList { values } => match values.as_slice() {
+                ExprKind::Value(Value::List(values, _)) => match values.as_slice() {
                     [] => ("''".to_owned(), Type::Unknown),
                     _ => {
-                        let trans = values.iter().map(|x| Ok(format!("str({})", self.translate_expr(x)?.0))).collect::<Result<Vec<_>,TranslateError>>()?;
+                        let trans = values.iter().map(|x| Ok(format!("str({})", wrap(self.translate_value(x)?)))).collect::<Result<Vec<_>,TranslateError>>()?;
                         (format!("({})", trans.join(" + ")), Type::Unknown)
                     }
                 }
-                _ => (format!("''.join({})", self.translate_expr(values)?.0), Type::Unknown),
+                _ => (format!("''.join({})", wrap(self.translate_expr(values)?)), Type::Unknown),
             }
 
             ExprKind::ListLen { value } | ExprKind::StrLen { value } => (format!("len({})", self.translate_expr(value)?.0), Type::Unknown), // builtin __len__ can't be overloaded to return wrapped
@@ -234,8 +273,8 @@ impl<'a> ScriptInfo<'a> {
             ExprKind::ListGetLast { list } => (format!("{}[-1]", wrap(self.translate_expr(list)?)), Type::Wrapped),
             ExprKind::ListCdr { value } => (format!("{}.all_but_first()", wrap(self.translate_expr(value)?)), Type::Wrapped),
 
-            ExprKind::UnicodeToChar { value } => (format!("snap.get_chr({})", self.translate_expr(value)?.0), Type::Unknown),
-            ExprKind::CharToUnicode { value } => (format!("snap.get_ord({})", self.translate_expr(value)?.0), Type::Unknown),
+            ExprKind::UnicodeToChar { value } => (format!("snap.get_chr({})", self.translate_expr(value)?.0), Type::Wrapped),
+            ExprKind::CharToUnicode { value } => (format!("snap.get_ord({})", self.translate_expr(value)?.0), Type::Wrapped),
 
             ExprKind::CallRpc { service, rpc, args } => (self.translate_rpc(service, rpc, args)?, Type::Unknown),
             ExprKind::CallFn { function, args, upvars } => match upvars.as_slice() {
@@ -331,7 +370,7 @@ impl<'a> ScriptInfo<'a> {
                 StmtKind::ChangeY { delta } => lines.push(format!("self.y_pos += {}{}", self.translate_expr(delta)?.0, fmt_comment(stmt.info.comment.as_deref()))),
 
                 StmtKind::Goto { target } => match &target.kind {
-                    ExprKind::MakeList { values } if values.len() == 2 => lines.push(format!("self.pos = ({}, {}){}", self.translate_expr(&values[0])?.0, self.translate_expr(&values[1])?.0, fmt_comment(stmt.info.comment.as_deref()))),
+                    ExprKind::Value(Value::List(values, _)) if values.len() == 2 => lines.push(format!("self.pos = ({}, {}){}", self.translate_value(&values[0])?.0, self.translate_value(&values[1])?.0, fmt_comment(stmt.info.comment.as_deref()))),
                     _ => lines.push(format!("self.pos = {}{}", self.translate_expr(target)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 }
                 StmtKind::SendLocalMessage { target, msg_type, wait } => {
@@ -520,7 +559,7 @@ pub fn translate(source: &str) -> Result<(String, String), TranslateError> {
         }
         if !role.globals.is_empty() { content.push('\n') }
         for func in role.funcs.iter() {
-            let params = iter::once("self").chain(func.params.iter().map(|v| v.trans_name.as_str()));
+            let params = func.params.iter().map(|v| v.trans_name.as_str());
             let code = ScriptInfo::new(stage.get().unwrap()).translate_stmts(&func.stmts)?;
             write!(&mut content, "def {}({}):\n{}\n\n", func.trans_name, Punctuated(params, ", "), indent(&code)).unwrap();
         }

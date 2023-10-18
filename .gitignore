@@ -1,6 +1,6 @@
 Cargo.lock
 /target
-*.xml
-*.json
+/*.xml
+/*.json
 .ds_store
 Cargo.lock
