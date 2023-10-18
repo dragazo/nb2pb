@@ -61,10 +61,7 @@ enum Type {
 fn wrap(val: (String, Type)) -> String {
     match &val.1 {
         Type::Wrapped => val.0,
-        Type::Unknown => match val.0.starts_with('(') && val.0.ends_with(')') {
-            true => format!("snap.wrap{}", val.0),
-            false => format!("snap.wrap({})", val.0),
-        }
+        Type::Unknown => format!("snap.wrap({})", val.0),
     }
 }
 

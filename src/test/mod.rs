@@ -92,8 +92,8 @@ def foo():
     bar = snap.lnot(False)
     bar = False
     bar = True
-    bar = snap.wrap(str(snap.wrap('hello ')) + str(snap.wrap('world')))
-    bar = snap.wrap(str(snap.wrap('hello ')) + str(snap.wrap('world')) + str(snap.wrap('again')))
+    bar = snap.wrap((str(snap.wrap('hello ')) + str(snap.wrap('world'))))
+    bar = snap.wrap((str(snap.wrap('hello ')) + str(snap.wrap('world')) + str(snap.wrap('again'))))
     bar = snap.wrap(''.join(baz()))
     bar = snap.wrap(len('world'))
     bar = snap.split('hello world', ' ')
