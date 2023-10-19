@@ -201,6 +201,10 @@ def foobar():
     a = snap.combinations([[], []])
     a = snap.combinations([[], [], []])
     a = snap.combinations(a)
+    a = snap.wrap('world')[snap.wrap('1') - snap.wrap(1)]
+    a = snap.wrap('world')[snap.wrap('5') - snap.wrap(1)]
+    a = snap.wrap('world').last
+    a = snap.wrap('world').rand
 "#.trim());
     assert_code_eq!(code[1].trim(), r#"
 def __init__(self):

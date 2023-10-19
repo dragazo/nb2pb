@@ -178,6 +178,10 @@ impl<'a> ScriptInfo<'a> {
             ExprKind::ListReshape { value, dims } => (format!("{}.reshape({})", wrap(self.translate_expr(value)?), self.translate_expr(dims)?.0), Type::Wrapped),
             ExprKind::ListCombinations { sources } => (format!("snap.combinations({})", self.translate_expr(sources)?.0), Type::Wrapped),
 
+            ExprKind::StrGet { string, index } => (format!("{}[{} - snap.wrap(1)]", wrap(self.translate_expr(string)?), wrap(self.translate_expr(index)?)), Type::Wrapped),
+            ExprKind::StrGetLast { string } => (format!("{}.last", wrap(self.translate_expr(string)?)), Type::Wrapped),
+            ExprKind::StrGetRandom { string } => (format!("{}.rand", wrap(self.translate_expr(string)?)), Type::Wrapped),
+
             ExprKind::Neg { value } => (format!("-{}", wrap(self.translate_expr(value)?)), Type::Wrapped),
             ExprKind::Not { value } => (format!("snap.lnot({})", self.translate_expr(value)?.0), Type::Wrapped),
             ExprKind::Abs { value } => (format!("abs({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
