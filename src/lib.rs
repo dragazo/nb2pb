@@ -171,7 +171,7 @@ impl<'a> ScriptInfo<'a> {
             ExprKind::ListColumns { value } => (format!("{}.T", wrap(self.translate_expr(value)?)), Type::Wrapped),
             ExprKind::ListRev { value } => (format!("{}[::-1]", wrap(self.translate_expr(value)?)), Type::Wrapped),
 
-            ExprKind::ListLines { value } => (format!("'\\n'.join({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::ListLines { value } => (format!("'\\n'.join(str(x) for x in {})", wrap(self.translate_expr(value)?)), Type::Wrapped),
             ExprKind::ListCsv { value } => (format!("{}.csv", wrap(self.translate_expr(value)?)), Type::Wrapped),
             ExprKind::ListJson { value } => (format!("{}.json", wrap(self.translate_expr(value)?)), Type::Wrapped),
 
@@ -290,7 +290,7 @@ impl<'a> ScriptInfo<'a> {
                         (format!("({})", trans.join(" + ")), Type::Unknown)
                     }
                 }
-                _ => (format!("''.join({})", wrap(self.translate_expr(values)?)), Type::Unknown),
+                _ => (format!("''.join(str(x) for x in {})", wrap(self.translate_expr(values)?)), Type::Unknown),
             }
 
             ExprKind::UnicodeToChar { value } => (format!("snap.get_chr({})", self.translate_expr(value)?.0), Type::Wrapped),

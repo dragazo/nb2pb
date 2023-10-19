@@ -94,7 +94,7 @@ def foo():
     bar = True
     bar = snap.wrap((str(snap.wrap('hello ')) + str(snap.wrap('world'))))
     bar = snap.wrap((str(snap.wrap('hello ')) + str(snap.wrap('world')) + str(snap.wrap('again'))))
-    bar = snap.wrap(''.join(baz()))
+    bar = snap.wrap(''.join(str(x) for x in baz()))
     bar = snap.wrap(len('world'))
     bar = snap.split('hello world', ' ')
     bar = snap.split('hello world', '')
@@ -166,7 +166,7 @@ def foobar():
     a = a.flat
     a = a.T
     a = a[::-1]
-    a = '\n'.join(a)
+    a = '\n'.join(str(x) for x in a)
     a = a.csv
     a = a.json
     for item in a:
