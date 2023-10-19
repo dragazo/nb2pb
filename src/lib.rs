@@ -169,7 +169,7 @@ impl<'a> ScriptInfo<'a> {
             ExprKind::ListDims { value } => (format!("{}.shape", wrap(self.translate_expr(value)?)), Type::Wrapped),
             ExprKind::ListFlatten { value } => (format!("{}.flat", wrap(self.translate_expr(value)?)), Type::Wrapped),
             ExprKind::ListColumns { value } => (format!("{}.T", wrap(self.translate_expr(value)?)), Type::Wrapped),
-            ExprKind::ListRev { value } => (format!("{}.rev", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::ListRev { value } => (format!("{}[::-1]", wrap(self.translate_expr(value)?)), Type::Wrapped),
 
             ExprKind::ListLines { value } => (format!("'\\n'.join({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
             ExprKind::ListCsv { value } => (format!("{}.csv", wrap(self.translate_expr(value)?)), Type::Wrapped),

@@ -165,7 +165,7 @@ def foobar():
     a = a.shape
     a = a.flat
     a = a.T
-    a = a.rev
+    a = a[::-1]
     a = '\n'.join(a)
     a = a.csv
     a = a.json
