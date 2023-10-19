@@ -185,8 +185,8 @@ def foobar():
         a[snap.wrap('1') - snap.wrap(1)] = 'zyx'
         a[snap.wrap('6') - snap.wrap(1)] = 'zyx'
         a[(snap.wrap('2') + snap.wrap('5')) - snap.wrap(1)] = 'zyx'
-        a.set_last('zyx')
-        a.set_rand('zyx')
+        a.last = 'zyx'
+        a.rand = 'zyx'
     a = snap.wrap([])
     a = snap.wrap([*snap.wrap([])])
     a = snap.wrap([*snap.wrap([]), *snap.wrap([])])
