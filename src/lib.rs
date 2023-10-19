@@ -151,6 +151,32 @@ impl<'a> ScriptInfo<'a> {
                 let trans = values.iter().map(|x| Ok(self.translate_expr(x)?.0)).collect::<Result<Vec<_>,TranslateError>>()?;
                 (format!("[{}]", trans.join(", ")), Type::Unknown)
             }
+            ExprKind::CopyList { list } => (format!("[*{}]", wrap(self.translate_expr(list)?)), Type::Unknown),
+            ExprKind::ListCons { item, list } => (format!("[{}, *{}]", self.translate_expr(item)?.0, wrap(self.translate_expr(list)?)), Type::Unknown),
+            ExprKind::ListCdr { value } => (format!("{}[1:]", wrap(self.translate_expr(value)?)), Type::Wrapped),
+
+            ExprKind::ListGet { list, index } => (format!("{}[{} - snap.wrap(1)]", wrap(self.translate_expr(list)?), wrap(self.translate_expr(index)?)), Type::Wrapped),
+            ExprKind::ListGetRandom { list } => (format!("{}.rand", wrap(self.translate_expr(list)?)), Type::Wrapped),
+            ExprKind::ListGetLast { list } => (format!("{}.last", wrap(self.translate_expr(list)?)), Type::Wrapped),
+
+            ExprKind::ListFind { list, value } => (format!("({}.index({}) + snap.wrap(1))", wrap(self.translate_expr(list)?), self.translate_expr(value)?.0), Type::Wrapped),
+            ExprKind::ListContains { list, value } => (format!("({} in {})", wrap(self.translate_expr(value)?), wrap(self.translate_expr(list)?)), Type::Wrapped),
+
+            ExprKind::ListLen { value } | ExprKind::StrLen { value } => (format!("len({})", self.translate_expr(value)?.0), Type::Unknown), // builtin __len__ can't be overloaded to return wrapped
+            ExprKind::ListIsEmpty { value } => (format!("(len({}) == 0)", self.translate_expr(value)?.0), Type::Wrapped),
+
+            ExprKind::ListRank { value } => (format!("len({}.shape)", wrap(self.translate_expr(value)?)), Type::Unknown), // builtin __len__ can't be overloaded to return wrapped
+            ExprKind::ListDims { value } => (format!("{}.shape", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::ListFlatten { value } => (format!("{}.flat", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::ListColumns { value } => (format!("{}.T", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::ListRev { value } => (format!("{}.rev", wrap(self.translate_expr(value)?)), Type::Wrapped),
+
+            ExprKind::ListLines { value } => (format!("'\\n'.join({})", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::ListCsv { value } => (format!("{}.csv", wrap(self.translate_expr(value)?)), Type::Wrapped),
+            ExprKind::ListJson { value } => (format!("{}.json", wrap(self.translate_expr(value)?)), Type::Wrapped),
+
+            ExprKind::ListReshape { value, dims } => (format!("{}.reshape({})", wrap(self.translate_expr(value)?), self.translate_expr(dims)?.0), Type::Wrapped),
+            ExprKind::ListCombinations { sources } => (format!("snap.combinations({})", self.translate_expr(sources)?.0), Type::Wrapped),
 
             ExprKind::Neg { value } => (format!("-{}", wrap(self.translate_expr(value)?)), Type::Wrapped),
             ExprKind::Not { value } => (format!("snap.lnot({})", self.translate_expr(value)?.0), Type::Wrapped),
@@ -247,10 +273,10 @@ impl<'a> ScriptInfo<'a> {
 
             ExprKind::ListCat { lists } => match &lists.kind {
                 ExprKind::Value(Value::List(values, _)) => {
-                    let trans = values.iter().map(|x| Ok(format!("*{}", self.translate_value(x)?.0))).collect::<Result<Vec<_>,TranslateError>>()?;
+                    let trans = values.iter().map(|x| Ok(format!("*{}", wrap(self.translate_value(x)?)))).collect::<Result<Vec<_>,TranslateError>>()?;
                     (format!("[{}]", trans.join(", ")), Type::Unknown)
                 }
-                _ => (format!("snap.append({})", self.translate_expr(lists)?.0), Type::Unknown),
+                _ => (format!("[y for x in {} for y in x]", wrap(self.translate_expr(lists)?)), Type::Unknown),
             }
             ExprKind::StrCat { values } => match &values.kind {
                 ExprKind::Value(Value::List(values, _)) => match values.as_slice() {
@@ -262,13 +288,6 @@ impl<'a> ScriptInfo<'a> {
                 }
                 _ => (format!("''.join({})", wrap(self.translate_expr(values)?)), Type::Unknown),
             }
-
-            ExprKind::ListLen { value } | ExprKind::StrLen { value } => (format!("len({})", self.translate_expr(value)?.0), Type::Unknown), // builtin __len__ can't be overloaded to return wrapped
-            ExprKind::ListFind { list, value } => (format!("{}.index({})", wrap(self.translate_expr(list)?), self.translate_expr(value)?.0), Type::Wrapped),
-            ExprKind::ListGet { list, index } => (format!("{}[{}]", wrap(self.translate_expr(list)?), self.translate_expr(index)?.0), Type::Wrapped),
-            ExprKind::ListGetRandom { list } => (format!("snap.choice({})", wrap(self.translate_expr(list)?)), Type::Wrapped),
-            ExprKind::ListGetLast { list } => (format!("{}[-1]", wrap(self.translate_expr(list)?)), Type::Wrapped),
-            ExprKind::ListCdr { value } => (format!("{}.all_but_first()", wrap(self.translate_expr(value)?)), Type::Wrapped),
 
             ExprKind::UnicodeToChar { value } => (format!("snap.get_chr({})", self.translate_expr(value)?.0), Type::Wrapped),
             ExprKind::CharToUnicode { value } => (format!("snap.get_ord({})", self.translate_expr(value)?.0), Type::Wrapped),
@@ -311,7 +330,15 @@ impl<'a> ScriptInfo<'a> {
                 StmtKind::DeclareLocals { vars } => lines.extend(vars.iter().map(|x| format!("{} = snap.wrap(0)", x.trans_name))),
                 StmtKind::Assign { var, value } => lines.push(format!("{} = {}{}", translate_var(var), wrap(self.translate_expr(value)?), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::AddAssign { var, value } => lines.push(format!("{} += {}{}", translate_var(var), wrap(self.translate_expr(value)?), fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::ListAssign { list, index, value } => lines.push(format!("{}[{}] = {}{}", wrap(self.translate_expr(list)?), self.translate_expr(index)?.0, self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::ListAssign { list, index, value } => lines.push(format!("{}[{} - snap.wrap(1)] = {}{}", wrap(self.translate_expr(list)?), wrap(self.translate_expr(index)?), self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::ListAssignLast { list, value } => lines.push(format!("{}.set_last({}){}", wrap(self.translate_expr(list)?), self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::ListAssignRandom { list, value } => lines.push(format!("{}.set_rand({}){}", wrap(self.translate_expr(list)?), self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::ListInsert { list, index, value } => lines.push(format!("{}.insert({}, {}){}", wrap(self.translate_expr(list)?), self.translate_expr(index)?.0, self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::ListInsertLast { list, value } => lines.push(format!("{}.append({}){}", wrap(self.translate_expr(list)?), self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::ListInsertRandom { list, value } => lines.push(format!("{}.insert_rand({}){}", wrap(self.translate_expr(list)?), self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::ListRemoveLast { list } => lines.push(format!("{}.pop(){}", wrap(self.translate_expr(list)?), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::ListRemove { list, index } => lines.push(format!("del {}[{} - snap.wrap(1)]{}", wrap(self.translate_expr(list)?), wrap(self.translate_expr(index)?), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::ListRemoveAll { list } => lines.push(format!("{}.clear(){}", self.translate_expr(list)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::Warp { stmts } => {
                     let code = self.translate_stmts(stmts)?;
                     lines.push(format!("with Warp():{}\n{}", fmt_comment(stmt.info.comment.as_deref()), indent(&code)));
@@ -391,10 +418,6 @@ impl<'a> ScriptInfo<'a> {
                     [] => lines.push(format!("{}{}", self.translate_fn_call(function, args)?, fmt_comment(stmt.info.comment.as_deref()))),
                     _ => return Err(TranslateError::Upvars),
                 }
-                StmtKind::ListInsertLast { list, value } => lines.push(format!("{}.append({}){}", wrap(self.translate_expr(list)?), wrap(self.translate_expr(value)?), fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::ListRemoveLast { list } => lines.push(format!("{}.pop(){}", wrap(self.translate_expr(list)?), fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::ListRemove { list, index } => lines.push(format!("del {}[{}]{}", wrap(self.translate_expr(list)?), self.translate_expr(index)?.0, fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::ListRemoveAll { list } => lines.push(format!("{}.clear(){}", self.translate_expr(list)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::ChangePenSize { delta } => lines.push(format!("self.pen_size += {}{}", self.translate_expr(delta)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::SetPenSize { value } => lines.push(format!("self.pen_size = {}{}", self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::SetVisible { value } => lines.push(format!("self.visible = {}{}", if *value { "True" } else { "False" }, fmt_comment(stmt.info.comment.as_deref()))),
@@ -414,7 +437,7 @@ impl<'a> ScriptInfo<'a> {
                 StmtKind::SetPenColor { color } => lines.push(format!("self.pen_color = '#{:02x}{:02x}{:02x}'{}", color.0, color.1, color.2, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::ChangeSize { delta } => lines.push(format!("self.scale += {}{}", self.translate_expr(delta)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::SetSize { value } => lines.push(format!("self.scale = {}{}", self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
-                x => panic!("{:?}", x),
+                _ => return Err(TranslateError::UnsupportedStmt(Box::new(stmt.clone()))),
             }
         }
 

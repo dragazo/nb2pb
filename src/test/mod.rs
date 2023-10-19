@@ -134,3 +134,85 @@ def __init__(self):
     self.costume = None
 "#.trim());
 }
+
+#[test]
+fn test_variables() {
+    let code = get_code(include_str!("projects/variables.xml")).unwrap();
+    assert_eq!(code.len(), 3);
+    assert_code_eq!(code[0].trim(), r#"
+from netsblox import snap
+
+def foobar():
+    a = snap.wrap(0)
+    a = snap.wrap([])
+    a = snap.wrap(['4', '1', ['2', (snap.wrap('3') + snap.wrap('1'))]])
+    a = snap.wrap([*a])
+    a += snap.wrap('1')
+    a = snap.srange('1', '10')
+    a = snap.wrap(['23', *a])
+    a = a[1:]
+    a = a[snap.wrap('1') - snap.wrap(1)]
+    a = a[snap.wrap('4') - snap.wrap(1)]
+    a = a[(snap.wrap('2') + snap.wrap('3')) - snap.wrap(1)]
+    a = a.last
+    a = a.rand
+    a = a[snap.wrap(['1', '3', '2']) - snap.wrap(1)]
+    a = (a.index('thing') + snap.wrap(1))
+    a = (snap.wrap('thing') in a)
+    a = (len(a) == 0)
+    a = snap.wrap(len(a))
+    a = snap.wrap(len(a.shape))
+    a = a.shape
+    a = a.flat
+    a = a.T
+    a = a.rev
+    a = '\n'.join(a)
+    a = a.csv
+    a = a.json
+    for item in a:
+        a.append(item)
+        a.append('abc')
+        a.pop()
+        del a[snap.wrap('1') - snap.wrap(1)]
+        del a[snap.wrap('7') - snap.wrap(1)]
+        del a[(snap.wrap('4') + snap.wrap('1')) - snap.wrap(1)]
+        a.clear()
+        a.insert('1', 'abc')
+        a.insert('16', 'abc')
+        a.insert((snap.wrap('1') + snap.wrap('3')), 'abc')
+        a.append('abc')
+        a.insert_rand('abc')
+        a[snap.wrap('1') - snap.wrap(1)] = 'zyx'
+        a[snap.wrap('6') - snap.wrap(1)] = 'zyx'
+        a[(snap.wrap('2') + snap.wrap('5')) - snap.wrap(1)] = 'zyx'
+        a.set_last('zyx')
+        a.set_rand('zyx')
+    a = snap.wrap([])
+    a = snap.wrap([*snap.wrap([])])
+    a = snap.wrap([*snap.wrap([]), *snap.wrap([])])
+    a = snap.wrap([*snap.wrap([]), *snap.wrap([]), *snap.wrap([])])
+    a = snap.wrap([y for x in a for y in x])
+    a = snap.wrap([]).reshape([])
+    a = snap.wrap([]).reshape(['5'])
+    a = snap.wrap([]).reshape(['5', '3'])
+    a = snap.wrap([]).reshape(a)
+    a = snap.combinations([])
+    a = snap.combinations([[]])
+    a = snap.combinations([[], []])
+    a = snap.combinations([[], [], []])
+    a = snap.combinations(a)
+"#.trim());
+    assert_code_eq!(code[1].trim(), r#"
+def __init__(self):
+    self.costume = None
+"#.trim());
+    assert_code_eq!(code[2].trim(), r#"
+def __init__(self):
+    self.pos = (0, 0)
+    self.heading = 90
+    self.pen_color = (80, 80, 80)
+    self.scale = 1
+    self.visible = True
+    self.costume = None
+"#.trim());
+}
