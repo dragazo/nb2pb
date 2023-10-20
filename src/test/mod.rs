@@ -205,6 +205,7 @@ def foobar():
     a = snap.wrap('world')[snap.wrap('5') - snap.wrap(1)]
     a = snap.wrap('world').last
     a = snap.wrap('world').rand
+    a = snap.wrap(len('hello world'))
 "#.trim());
     assert_code_eq!(code[1].trim(), r#"
 def __init__(self):
