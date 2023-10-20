@@ -175,8 +175,7 @@ impl<'a> ScriptInfo<'a> {
             ExprKind::ListCsv { value } => (format!("{}.csv", wrap(self.translate_expr(value)?)), Type::Wrapped),
             ExprKind::ListJson { value } => (format!("{}.json", wrap(self.translate_expr(value)?)), Type::Wrapped),
 
-            ExprKind::ListReshape { value, dims } => (format!("{}.reshape({})", wrap(self.translate_expr(value)?), self.translate_expr(dims)?.0), Type::Wrapped),
-            ExprKind::ListCombinations { sources } => (format!("snap.combinations({})", self.translate_expr(sources)?.0), Type::Wrapped),
+            ExprKind::ListReshape { value, dims } => (format!("{}.reshaped({})", wrap(self.translate_expr(value)?), self.translate_expr(dims)?.0), Type::Wrapped),
 
             ExprKind::StrGet { string, index } => (format!("{}[{} - snap.wrap(1)]", wrap(self.translate_expr(string)?), wrap(self.translate_expr(index)?)), Type::Wrapped),
             ExprKind::StrGetLast { string } => (format!("{}.last", wrap(self.translate_expr(string)?)), Type::Wrapped),
@@ -189,6 +188,13 @@ impl<'a> ScriptInfo<'a> {
 
             ExprKind::Atan2 { y, x } => (format!("snap.atan2({}, {})", self.translate_expr(y)?.0, self.translate_expr(x)?.0), Type::Wrapped),
 
+            ExprKind::ListCombinations { sources } => match &sources.kind {
+                ExprKind::Value(Value::List(sources, _)) => {
+                    let trans = sources.iter().map(|x| Ok(self.translate_value(x)?.0)).collect::<Result<Vec<_>,TranslateError>>()?;
+                    (format!("snap.combinations({})", trans.join(", ")), Type::Wrapped)
+                }
+                _ => (format!("snap.combinations(*{})", wrap(self.translate_expr(sources)?)), Type::Wrapped),
+            }
             ExprKind::Add { values } => match &values.kind {
                 ExprKind::Value(Value::List(values, _)) => match values.as_slice() {
                     [] => ("0".into(), Type::Unknown),
