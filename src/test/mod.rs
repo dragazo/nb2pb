@@ -220,3 +220,41 @@ def __init__(self):
     self.costume = None
 "#.trim());
 }
+
+#[test]
+fn test_lambdas() {
+    let code = get_code(include_str!("projects/lambdas.xml")).unwrap();
+    assert_eq!(code.len(), 3);
+    assert_code_eq!(code[0].trim(), r#"
+from netsblox import snap
+
+def barkbark():
+    a = snap.wrap(0)
+    (lambda: (snap.wrap('6') + snap.wrap('3')))()
+    (lambda _1: (_1 + snap.wrap('3')))(snap.wrap('12'))
+    (lambda _1, _2: (_1 * _2))(snap.wrap('31'), snap.wrap('8'))
+    a = (lambda: (snap.wrap('6') + snap.wrap('3')))()
+    a = (lambda _1: snap.combinations(_1, ['6', '9']))(snap.wrap('12'))
+    a = (lambda _1, _2: snap.combinations(_1, _2))(snap.wrap('31'), snap.wrap('8'))
+    a = (lambda: (True and False))()
+    a = (lambda _1: (_1 and True))(False)
+    a = (lambda _1, _2: (_1 and _2))(True, False)
+    a = snap.wrap([(lambda _1: (_1 ** snap.wrap('2')))(x) for x in snap.srange('1', '10')])
+    a = snap.wrap([x for x in snap.srange('1', '10') if (lambda _1: ((_1 % snap.wrap('2')) == snap.wrap('0')))(x)])
+    a = snap.srange('1', '100').index_where((lambda xc: (((xc % snap.wrap('7')) == snap.wrap('0')) and ((xc % snap.wrap('5')) == snap.wrap('0')))))
+    a = snap.srange('1', '100').fold((lambda _1, _2: (_1 + _2)))
+"#.trim());
+    assert_code_eq!(code[1].trim(), r#"
+def __init__(self):
+    self.costume = None
+"#.trim());
+    assert_code_eq!(code[2].trim(), r#"
+def __init__(self):
+    self.pos = (0, 0)
+    self.heading = 90
+    self.pen_color = (80, 80, 80)
+    self.scale = 1
+    self.visible = True
+    self.costume = None
+"#.trim());
+}

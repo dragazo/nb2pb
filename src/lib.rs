@@ -4,6 +4,7 @@
 mod python;
 
 use std::fmt::Write;
+use std::rc::Rc;
 use std::iter;
 
 use once_cell::unsync::OnceCell;
@@ -43,6 +44,8 @@ pub enum TranslateError {
     Upvars,
     AnyMessage,
     RingTypeQuery,
+    CommandRing,
+    TellAskClosure,
 }
 impl From<Box<Error>> for TranslateError { fn from(e: Box<Error>) -> Self { Self::Parse(e) } }
 
@@ -123,7 +126,11 @@ impl<'a> ScriptInfo<'a> {
         let args_str = self.translate_kwargs(args, ", ", false)?;
         Ok(format!("nothrow(nb.call)('{}', '{}'{})", escape(service), escape(rpc), args_str))
     }
-    fn translate_fn_call(&mut self, function: &FnRef, args: &[Expr]) -> Result<String, TranslateError> {
+    fn translate_fn_call(&mut self, function: &FnRef, args: &[Expr], upvars: &[VariableRef]) -> Result<String, TranslateError> {
+        if !upvars.is_empty() {
+            return Err(TranslateError::Upvars);
+        }
+
         let mut trans_args = Vec::with_capacity(args.len());
         for arg in args.iter() {
             trans_args.push(wrap(self.translate_expr(arg)?));
@@ -134,10 +141,34 @@ impl<'a> ScriptInfo<'a> {
             FnLocation::Method => format!("self.{}({})", function.trans_name, Punctuated(trans_args.iter(), ", ")),
         })
     }
+    fn translate_closure_call(&mut self, new_entity: Option<&Expr>, closure: &Expr, args: &[Expr]) -> Result<String, TranslateError> {
+        if new_entity.is_some() {
+            return Err(TranslateError::TellAskClosure);
+        }
+
+        let args = args.iter().map(|x| Ok(wrap(self.translate_expr(x)?))).collect::<Result<Vec<_>,TranslateError>>()?;
+        Ok(format!("{}({})", self.translate_expr(closure)?.0, args.join(", "))) // return values are always considered wrapped
+    }
     fn translate_expr(&mut self, expr: &Expr) -> Result<(String, Type), TranslateError> {
         Ok(match &expr.kind {
             ExprKind::Value(v) => self.translate_value(v)?,
             ExprKind::Variable { var, .. } => (translate_var(var), Type::Wrapped), // all assignments are wrapped, so we can assume vars are wrapped
+
+            ExprKind::Closure { kind: _, params, captures: _, stmts } => match stmts.as_slice() {
+                [Stmt { kind: StmtKind::Return { value }, info: _ }] => {
+                    let mut params_string = String::new();
+                    for param in params {
+                        if params_string.is_empty() {
+                            params_string.push(' ');
+                        } else {
+                            params_string.push_str(", ");
+                        }
+                        params_string.push_str(&param.trans_name);
+                    }
+                    (format!("(lambda{}: {})",params_string, wrap(self.translate_expr(value)?)), Type::Wrapped) // functions are always considered wrapped
+                },
+                _ => return Err(TranslateError::CommandRing),
+            }
 
             ExprKind::This => ("self".into(), Type::Wrapped), // non-primitives are considered wrapped
             ExprKind::Entity { trans_name, .. } => (trans_name.into(), Type::Wrapped), // non-primitives are considered wrapped
@@ -177,6 +208,11 @@ impl<'a> ScriptInfo<'a> {
 
             ExprKind::ListReshape { value, dims } => (format!("{}.reshaped({})", wrap(self.translate_expr(value)?), self.translate_expr(dims)?.0), Type::Wrapped),
 
+            ExprKind::Map { f, list } => (format!("[{}(x) for x in {}]", self.translate_expr(f)?.0, wrap(self.translate_expr(list)?)), Type::Unknown),
+            ExprKind::Keep { f, list } => (format!("[x for x in {} if {}(x)]", wrap(self.translate_expr(list)?), self.translate_expr(f)?.0), Type::Unknown),
+            ExprKind::FindFirst { f, list } => (format!("{}.index_where({})", wrap(self.translate_expr(list)?), self.translate_expr(f)?.0), Type::Wrapped),
+            ExprKind::Combine { f, list } => (format!("{}.fold({})", wrap(self.translate_expr(list)?), self.translate_expr(f)?.0), Type::Wrapped),
+
             ExprKind::StrGet { string, index } => (format!("{}[{} - snap.wrap(1)]", wrap(self.translate_expr(string)?), wrap(self.translate_expr(index)?)), Type::Wrapped),
             ExprKind::StrGetLast { string } => (format!("{}.last", wrap(self.translate_expr(string)?)), Type::Wrapped),
             ExprKind::StrGetRandom { string } => (format!("{}.rand", wrap(self.translate_expr(string)?)), Type::Wrapped),
@@ -189,31 +225,31 @@ impl<'a> ScriptInfo<'a> {
             ExprKind::Atan2 { y, x } => (format!("snap.atan2({}, {})", self.translate_expr(y)?.0, self.translate_expr(x)?.0), Type::Wrapped),
 
             ExprKind::ListCombinations { sources } => match &sources.kind {
-                ExprKind::Value(Value::List(sources, _)) => {
-                    let trans = sources.iter().map(|x| Ok(self.translate_value(x)?.0)).collect::<Result<Vec<_>,TranslateError>>()?;
-                    (format!("snap.combinations({})", trans.join(", ")), Type::Wrapped)
-                }
+                ExprKind::Value(Value::List(values, _)) => (format!("snap.combinations({})", values.iter().map(|x| Ok(self.translate_value(x)?.0)).collect::<Result<Vec<_>,TranslateError>>()?.join(", ")), Type::Wrapped),
+                ExprKind::MakeList { values } => (format!("snap.combinations({})", values.iter().map(|x| Ok(self.translate_expr(x)?.0)).collect::<Result<Vec<_>,TranslateError>>()?.join(", ")), Type::Wrapped),
                 _ => (format!("snap.combinations(*{})", wrap(self.translate_expr(sources)?)), Type::Wrapped),
             }
             ExprKind::Add { values } => match &values.kind {
                 ExprKind::Value(Value::List(values, _)) => match values.as_slice() {
                     [] => ("0".into(), Type::Unknown),
-                    _ => {
-                        let trans = values.iter().map(|x| Ok(wrap(self.translate_value(x)?))).collect::<Result<Vec<_>,TranslateError>>()?;
-                        (format!("({})", trans.join(" + ")), Type::Wrapped)
-                    }
+                    _ => (format!("({})", values.iter().map(|x| Ok(wrap(self.translate_value(x)?))).collect::<Result<Vec<_>,TranslateError>>()?.join(" + ")), Type::Wrapped),
+                }
+                ExprKind::MakeList { values } => match values.as_slice() {
+                    [] => ("0".into(), Type::Unknown),
+                    _ => (format!("({})", values.iter().map(|x| Ok(wrap(self.translate_expr(x)?))).collect::<Result<Vec<_>,TranslateError>>()?.join(" + ")), Type::Wrapped),
                 }
                 _ => (format!("sum({})", wrap(self.translate_expr(values)?)), Type::Unknown),
             }
             ExprKind::Mul { values } => match &values.kind {
                 ExprKind::Value(Value::List(values, _)) => match values.as_slice() {
                     [] => ("1".into(), Type::Unknown),
-                    _ => {
-                        let trans = values.iter().map(|x| Ok(wrap(self.translate_value(x)?))).collect::<Result<Vec<_>,TranslateError>>()?;
-                        (format!("({})", trans.join(" * ")), Type::Wrapped)
-                    }
+                    _ => (format!("({})", values.iter().map(|x| Ok(wrap(self.translate_value(x)?))).collect::<Result<Vec<_>,TranslateError>>()?.join(" * ")), Type::Wrapped),
                 }
-                _ => (format!("snap.prod({})", wrap(self.translate_expr(values)?)), Type::Wrapped),
+                ExprKind::MakeList { values } => match values.as_slice() {
+                    [] => ("1".into(), Type::Unknown),
+                    _ => (format!("({})", values.iter().map(|x| Ok(wrap(self.translate_expr(x)?))).collect::<Result<Vec<_>,TranslateError>>()?.join(" * ")), Type::Wrapped),
+                }
+                _ => (format!("snap.prod({})", self.translate_expr(values)?.0), Type::Wrapped),
             }
 
             ExprKind::Min { values } => (format!("min({})", wrap(self.translate_expr(values)?)), Type::Wrapped),
@@ -303,10 +339,8 @@ impl<'a> ScriptInfo<'a> {
             ExprKind::CharToUnicode { value } => (format!("snap.get_ord({})", self.translate_expr(value)?.0), Type::Wrapped),
 
             ExprKind::CallRpc { service, rpc, args } => (self.translate_rpc(service, rpc, args)?, Type::Unknown),
-            ExprKind::CallFn { function, args, upvars } => match upvars.as_slice() {
-                [] => (self.translate_fn_call(function, args)?, Type::Wrapped),
-                _ => return Err(TranslateError::Upvars),
-            }
+            ExprKind::CallFn { function, args, upvars } => (self.translate_fn_call(function, args, upvars)?, Type::Wrapped),
+            ExprKind::CallClosure { new_entity, closure, args } => (self.translate_closure_call(new_entity.as_deref(), closure, args)?, Type::Wrapped),
 
             ExprKind::XPos => ("self.x_pos".into(), Type::Unknown),
             ExprKind::YPos => ("self.y_pos".into(), Type::Unknown),
@@ -424,17 +458,15 @@ impl<'a> ScriptInfo<'a> {
                     Some(duration) => lines.push(format!("self.say(str({}), duration = {}){}", self.translate_expr(content)?.0, self.translate_expr(duration)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                     None => lines.push(format!("self.say(str({})){}", self.translate_expr(content)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 }
-                StmtKind::CallFn { function, args, upvars } => match upvars.as_slice() {
-                    [] => lines.push(format!("{}{}", self.translate_fn_call(function, args)?, fmt_comment(stmt.info.comment.as_deref()))),
-                    _ => return Err(TranslateError::Upvars),
-                }
+                StmtKind::CallRpc { service, rpc, args } => lines.push(format!("{}{}", self.translate_rpc(service, rpc, args)?, fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::CallFn { function, args, upvars } => lines.push(format!("{}{}", self.translate_fn_call(function, args, upvars)?, fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::CallClosure { new_entity, closure, args } => lines.push(format!("{}{}", self.translate_closure_call(new_entity.as_deref(), closure, args)?, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::ChangePenSize { delta } => lines.push(format!("self.pen_size += {}{}", self.translate_expr(delta)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::SetPenSize { value } => lines.push(format!("self.pen_size = {}{}", self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::SetVisible { value } => lines.push(format!("self.visible = {}{}", if *value { "True" } else { "False" }, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::WaitUntil { condition } => lines.push(format!("while not {}:{}\n    time.sleep(0.05)", wrap(self.translate_expr(condition)?), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::BounceOffEdge => lines.push(format!("self.keep_on_stage(bounce = True){}", fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::Sleep { seconds } => lines.push(format!("time.sleep(+{}){}", wrap(self.translate_expr(seconds)?), fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::RunRpc { service, rpc, args } => lines.push(format!("{}{}", self.translate_rpc(service, rpc, args)?, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::Forward { distance } => lines.push(format!("self.forward({}){}", self.translate_expr(distance)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::TurnRight { angle } => lines.push(format!("self.turn_right({}){}", self.translate_expr(angle)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::TurnLeft { angle } => lines.push(format!("self.turn_left({}){}", self.translate_expr(angle)?.0, fmt_comment(stmt.info.comment.as_deref()))),
@@ -543,7 +575,10 @@ def my_oncondition{idx}(self):
 ///
 /// On success, returns the project name and project json content as a tuple.
 pub fn translate(source: &str) -> Result<(String, String), TranslateError> {
-    let parser = Parser::default();
+    let parser = Parser {
+        autofill_generator: Rc::new(|x| Ok(format!("_{x}"))),
+        ..Default::default()
+    };
     let project = parser.parse(source)?;
     if project.roles.is_empty() { return Err(TranslateError::NoRoles) }
 
