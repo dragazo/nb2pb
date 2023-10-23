@@ -318,19 +318,17 @@ impl<'a> ScriptInfo<'a> {
             }
 
             ExprKind::ListCat { lists } => match &lists.kind {
-                ExprKind::Value(Value::List(values, _)) => {
-                    let trans = values.iter().map(|x| Ok(format!("*{}", wrap(self.translate_value(x)?)))).collect::<Result<Vec<_>,TranslateError>>()?;
-                    (format!("[{}]", trans.join(", ")), Type::Unknown)
-                }
+                ExprKind::Value(Value::List(values, _)) => (format!("[{}]", values.iter().map(|x| Ok(format!("*{}", wrap(self.translate_value(x)?)))).collect::<Result<Vec<_>,TranslateError>>()?.join(", ")), Type::Unknown),
                 _ => (format!("[y for x in {} for y in x]", wrap(self.translate_expr(lists)?)), Type::Unknown),
             }
             ExprKind::StrCat { values } => match &values.kind {
                 ExprKind::Value(Value::List(values, _)) => match values.as_slice() {
                     [] => ("''".to_owned(), Type::Unknown),
-                    _ => {
-                        let trans = values.iter().map(|x| Ok(format!("str({})", wrap(self.translate_value(x)?)))).collect::<Result<Vec<_>,TranslateError>>()?;
-                        (format!("({})", trans.join(" + ")), Type::Unknown)
-                    }
+                    _ => (format!("({})", values.iter().map(|x| Ok(format!("str({})", wrap(self.translate_value(x)?)))).collect::<Result<Vec<_>,TranslateError>>()?.join(" + ")), Type::Unknown),
+                }
+                ExprKind::MakeList { values } => match values.as_slice() {
+                    [] => ("''".to_owned(), Type::Unknown),
+                    _ => (format!("({})", values.iter().map(|x| Ok(format!("str({})", wrap(self.translate_expr(x)?)))).collect::<Result<Vec<_>,TranslateError>>()?.join(" + ")), Type::Unknown),
                 }
                 _ => (format!("''.join(str(x) for x in {})", wrap(self.translate_expr(values)?)), Type::Unknown),
             }
@@ -362,6 +360,8 @@ impl<'a> ScriptInfo<'a> {
 
             ExprKind::RpcError => ("(get_error() or '')".into(), Type::Unknown),
 
+            ExprKind::Clone { target } => (format!("{}.clone()", self.translate_expr(target)?.0), Type::Wrapped), // sprites are considered wrapped
+
             _ => return Err(TranslateError::UnsupportedExpr(Box::new(expr.clone()))),
         })
     }
@@ -382,7 +382,8 @@ impl<'a> ScriptInfo<'a> {
                 StmtKind::ListInsertRandom { list, value } => lines.push(format!("{}.insert_rand({}){}", wrap(self.translate_expr(list)?), self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::ListRemoveLast { list } => lines.push(format!("{}.pop(){}", wrap(self.translate_expr(list)?), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::ListRemove { list, index } => lines.push(format!("del {}[{} - snap.wrap(1)]{}", wrap(self.translate_expr(list)?), wrap(self.translate_expr(index)?), fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::ListRemoveAll { list } => lines.push(format!("{}.clear(){}", self.translate_expr(list)?.0, fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::ListRemoveAll { list } => lines.push(format!("{}.clear(){}", wrap(self.translate_expr(list)?), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::Throw { error } => lines.push(format!("raise RuntimeError(str({})){}", wrap(self.translate_expr(error)?), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::Warp { stmts } => {
                     let code = self.translate_stmts(stmts)?;
                     lines.push(format!("with Warp():{}\n{}", fmt_comment(stmt.info.comment.as_deref()), indent(&code)));
@@ -397,6 +398,11 @@ impl<'a> ScriptInfo<'a> {
                     let then = self.translate_stmts(then)?;
                     let otherwise = self.translate_stmts(otherwise)?;
                     lines.push(format!("if {}:{}\n{}\nelse:\n{}", condition, fmt_comment(stmt.info.comment.as_deref()), indent(&then), indent(&otherwise)));
+                }
+                StmtKind::TryCatch { code, var, handler } => {
+                    let code = self.translate_stmts(code)?;
+                    let handler = self.translate_stmts(handler)?;
+                    lines.push(format!("try:{}\n{}\nexcept Exception as {}:\n{}", fmt_comment(stmt.info.comment.as_deref()), indent(&code), var.trans_name, indent(&handler)));
                 }
                 StmtKind::InfLoop { stmts } => {
                     let code = self.translate_stmts(stmts)?;
@@ -479,6 +485,7 @@ impl<'a> ScriptInfo<'a> {
                 StmtKind::SetPenColor { color } => lines.push(format!("self.pen_color = '#{:02x}{:02x}{:02x}'{}", color.0, color.1, color.2, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::ChangeSize { delta } => lines.push(format!("self.scale += {}{}", self.translate_expr(delta)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::SetSize { value } => lines.push(format!("self.scale = {}{}", self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::Clone { target } => lines.push(format!("{}.clone(){}", self.translate_expr(target)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 _ => return Err(TranslateError::UnsupportedStmt(Box::new(stmt.clone()))),
             }
         }
@@ -532,6 +539,7 @@ impl SpriteInfo {
     fn translate_hat(&mut self, hat: &Hat, stage: &SpriteInfo) -> Result<String, TranslateError> {
         Ok(match &hat.kind {
             HatKind::OnFlag => format!("@onstart(){}\ndef my_onstart_{}(self):\n", fmt_comment(hat.info.comment.as_deref()), self.scripts.len() + 1),
+            HatKind::OnClone => format!("@onstart(when = 'clone'){}\ndef my_onstart_{}(self):\n", fmt_comment(hat.info.comment.as_deref()), self.scripts.len() + 1),
             HatKind::OnKey { key } => format!("@onkey('{}'){}\ndef my_onkey_{}(self):\n", key, fmt_comment(hat.info.comment.as_deref()), self.scripts.len() + 1),
             HatKind::MouseDown => format!("@onmouse('down'){}\ndef my_onmouse_{}(self, x, y):\n", fmt_comment(hat.info.comment.as_deref()), self.scripts.len() + 1),
             HatKind::MouseUp => format!("@onmouse('up'){}\ndef my_onmouse_{}(self, x, y):\n", fmt_comment(hat.info.comment.as_deref()), self.scripts.len() + 1),
@@ -555,7 +563,7 @@ def my_oncondition{idx}(self):
                 condition = wrap(ScriptInfo::new(stage).translate_expr(condition)?))
             }
             HatKind::LocalMessage { msg_type } => match msg_type {
-                Some(msg_type) => format!("@nb.on_message('local::{}'){}\ndef my_on_message_{}(self, **kwargs):\n", escape(msg_type), fmt_comment(hat.info.comment.as_deref()), self.scripts.len() + 1),
+                Some(msg_type) => format!("@nb.on_message('local::{}'){}\ndef my_on_message_{}(self):\n", escape(msg_type), fmt_comment(hat.info.comment.as_deref()), self.scripts.len() + 1),
                 None => return Err(TranslateError::AnyMessage),
             }
             HatKind::NetworkMessage { msg_type, fields } => {

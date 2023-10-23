@@ -223,6 +223,90 @@ def __init__(self):
 }
 
 #[test]
+fn test_control() {
+    let code = get_code(include_str!("projects/control.xml")).unwrap();
+    assert_eq!(code.len(), 3);
+    assert_code_eq!(code[0].trim(), r#"
+from netsblox import snap
+
+foo = snap.wrap('Init Foo!!')
+bar = snap.wrap('Init Bar!!')
+"#.trim());
+    assert_code_eq!(code[1].trim(), r#"
+def __init__(self):
+    self.costume = None
+"#.trim());
+    assert_code_eq!(code[2].trim(), r#"
+def __init__(self):
+    self.pos = (0, 0)
+    self.heading = 90
+    self.pen_color = (80, 80, 80)
+    self.scale = 1
+    self.visible = True
+    self.costume = None
+
+@onstart()
+def my_onstart_1(self):
+    time.sleep(+snap.wrap('2.4'))
+    nb.send_message('local::my msg thing')
+
+@onkey('space')
+def my_onkey_2(self):
+    while not ((globals()['foo'] + snap.wrap('2')) == snap.wrap('7')):
+        time.sleep(0.05)
+    raise RuntimeError(str(snap.wrap('oopsie!')))
+
+@onmouse('up')
+def my_onmouse_3(self, x, y):
+    globals()['foo'] = snap.wrap('Mouse Up!')
+    while not globals()['foo']:
+        try:
+            for item in globals()['bar']:
+                globals()['foo'] = item[snap.wrap('1') - snap.wrap(1)]
+                globals()['bar'] = item.last
+        except Exception as err:
+            globals()['bar'].append(err)
+            globals()['foo'].append((str(snap.wrap('got error: ')) + str(err)))
+
+@onmouse('down')
+def my_onmouse_4(self, x, y):
+    with Warp():
+        globals()['foo'] = snap.wrap('Mouse Down!')
+        globals()['foo'] = snap.wrap('more stuff')
+
+@onmouse('scroll-up')
+def my_onmouse_5(self, x, y):
+    globals()['foo'] = snap.wrap('Scroll Up!')
+    for _ in range(+snap.wrap('6')):
+        globals()['foo'] = snap.wrap('starting...')
+        nothrow(nb.call)('Chart', 'draw', lines = nothrow(nb.call)('MaunaLoaCO2Data', 'getCO2Trend', startyear = '', endyear = ''), options = '')
+        globals()['foo'] = snap.wrap('done!')
+
+@onmouse('scroll-down')
+def my_onmouse_6(self, x, y):
+    if (globals()['bar'] or globals()['foo']):
+        globals()['foo'] = snap.wrap('Scroll Down!')
+        globals()['bar'] = snap.wrap('more')
+    else:
+        globals()['bar'] = snap.wrap('cloning...')
+        self.clone()
+
+@nb.on_message('local::my msg thing')
+def my_on_message_7(self):
+    while True:
+        globals()['foo'] = (globals()['foo'] if (globals()['foo'] > globals()['bar']) else globals()['bar'])
+        globals()['bar'] = self.clone()
+
+@onstart(when = 'clone')
+def my_onstart_8(self):
+    for xyz in snap.sxrange('4', '8'):
+        if (snap.sqrt(xyz) < snap.wrap('9')):
+            globals()['foo'] = snap.wrap('agony!!')
+            globals()['bar'] = snap.wrap('pain!!')
+"#.trim());
+}
+
+#[test]
 fn test_lambdas() {
     let code = get_code(include_str!("projects/lambdas.xml")).unwrap();
     assert_eq!(code.len(), 3);
