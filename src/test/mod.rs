@@ -223,6 +223,36 @@ def __init__(self):
 }
 
 #[test]
+fn test_invalid_c_idents() {
+    let code = get_code(include_str!("projects/invalid-c-idents.xml")).unwrap();
+    assert_eq!(code.len(), 3);
+    assert_code_eq!(code[0].trim(), r#"
+from netsblox import snap
+
+def some_blocks_stuff():
+    pass
+"#.trim());
+    assert_code_eq!(code[1].trim(), r#"
+def __init__(self):
+    self.costume = None
+"#.trim());
+    assert_code_eq!(code[2].trim(), r#"
+def __init__(self):
+    self.pos = (0, 0)
+    self.heading = 90
+    self.pen_color = (80, 80, 80)
+    self.scale = 1
+    self.visible = True
+    self.costume = None
+
+@onstart()
+def my_onstart_1(self):
+    my_variable_name = snap.wrap(0)
+    some_blocks_stuff()
+"#.trim());
+}
+
+#[test]
 fn test_control() {
     let code = get_code(include_str!("projects/control.xml")).unwrap();
     assert_eq!(code.len(), 3);

@@ -583,6 +583,7 @@ def my_oncondition{idx}(self):
 /// On success, returns the project name and project json content as a tuple.
 pub fn translate(source: &str) -> Result<(CompactString, CompactString), TranslateError> {
     let parser = Parser {
+        name_transformer: Rc::new(netsblox_ast::util::c_ident),
         autofill_generator: Rc::new(|x| Ok(format_compact!("_{x}"))),
         ..Default::default()
     };
