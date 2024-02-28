@@ -21,6 +21,7 @@
         "idents",
         "isinstance",
         "lnot",
+        "nonhat",
         "srange",
         "upvars"
     ]

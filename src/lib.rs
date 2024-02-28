@@ -585,7 +585,7 @@ pub fn translate(source: &str) -> Result<(CompactString, CompactString), Transla
     let parser = Parser {
         name_transformer: Rc::new(netsblox_ast::util::c_ident),
         autofill_generator: Rc::new(|x| Ok(format_compact!("_{x}"))),
-        ..Default::default()
+        omit_nonhat_scripts: true, // we don't need dangling blocks of code since they can't do anything
     };
     let project = parser.parse(source)?;
     if project.roles.is_empty() { return Err(TranslateError::NoRoles) }
