@@ -9,6 +9,7 @@ use std::iter;
 
 use once_cell::unsync::OnceCell;
 use compact_str::{CompactString, ToCompactString, format_compact};
+use base64::engine::Engine as Base64Engine;
 use regex::Regex;
 
 #[macro_use] extern crate serde_json;
@@ -297,6 +298,8 @@ impl<'a> ScriptInfo<'a> {
             ExprKind::Random { a, b } => (format_compact!("snap.rand({}, {})", self.translate_expr(a)?.0, self.translate_expr(b)?.0), Type::Wrapped), // python impl returns wrapped
             ExprKind::Range { start, stop } => (format_compact!("snap.srange({}, {})", self.translate_expr(start)?.0, self.translate_expr(stop)?.0), Type::Wrapped), // python impl returns wrapped
 
+            ExprKind::CostumeNumber => (format_compact!("(self.costumes.index(self.costume, -1) + 1)"), Type::Unknown),
+
             ExprKind::TextSplit { text, mode } => match mode {
                 TextSplitMode::Custom(x) => (format_compact!("snap.split({}, {})", self.translate_expr(text)?.0, self.translate_expr(x)?.0), Type::Wrapped),
                 TextSplitMode::LF => (format_compact!("snap.split({}, '\\n')", self.translate_expr(text)?.0), Type::Wrapped),
@@ -435,6 +438,7 @@ impl<'a> ScriptInfo<'a> {
                     let costume = self.translate_expr(costume)?.0;
                     lines.push(format_compact!("self.costume = {}{}", costume, fmt_comment(stmt.info.comment.as_deref())));
                 }
+                StmtKind::NextCostume => lines.push(format_compact!("self.costume = (self.costumes.index(self.costume, -1) + 1) % len(self.costumes)")),
 
                 StmtKind::SetX { value } => lines.push(format_compact!("self.x_pos = {}{}", self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::SetY { value } => lines.push(format_compact!("self.y_pos = {}{}", self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
@@ -460,8 +464,8 @@ impl<'a> ScriptInfo<'a> {
                     lines.push(format_compact!("nb.send_message('{}', {}{}){}", escape(msg_type), self.translate_expr(target)?.0, kwargs_str, fmt_comment(stmt.info.comment.as_deref())));
                 }
                 StmtKind::Say { content, duration } | StmtKind::Think { content, duration } => match duration {
-                    Some(duration) => lines.push(format_compact!("self.say(str({}), duration = {}){}", self.translate_expr(content)?.0, self.translate_expr(duration)?.0, fmt_comment(stmt.info.comment.as_deref()))),
-                    None => lines.push(format_compact!("self.say(str({})){}", self.translate_expr(content)?.0, fmt_comment(stmt.info.comment.as_deref()))),
+                    Some(duration) => lines.push(format_compact!("self.say({}, duration = {}){}", self.translate_expr(content)?.0, self.translate_expr(duration)?.0, fmt_comment(stmt.info.comment.as_deref()))),
+                    None => lines.push(format_compact!("self.say({}){}", self.translate_expr(content)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 }
                 StmtKind::CallRpc { service, host: _, rpc, args } => lines.push(format_compact!("{}{}", self.translate_rpc(service, rpc, args)?, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::CallFn { function, args, upvars } => lines.push(format_compact!("{}{}", self.translate_fn_call(function, args, upvars)?, fmt_comment(stmt.info.comment.as_deref()))),
@@ -482,8 +486,8 @@ impl<'a> ScriptInfo<'a> {
                 StmtKind::SetPenDown { value } => lines.push(format_compact!("self.drawing = {}{}", if *value { "True" } else { "False" }, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::PenClear => lines.push(format_compact!("{}.clear_drawings(){}", self.stage.name, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::SetPenColor { color } => lines.push(format_compact!("self.pen_color = '#{:02x}{:02x}{:02x}'{}", color.0, color.1, color.2, fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::ChangeSize { delta } => lines.push(format_compact!("self.scale += {}{}", self.translate_expr(delta)?.0, fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::SetSize { value } => lines.push(format_compact!("self.scale = {}{}", self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::ChangeSize { delta } => lines.push(format_compact!("self.scale += {} / 100{}", wrap(self.translate_expr(delta)?), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::SetSize { value } => lines.push(format_compact!("self.scale = {} / 100{}", wrap(self.translate_expr(value)?), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::Clone { target } => lines.push(format_compact!("{}.clone(){}", self.translate_expr(target)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 _ => return Err(TranslateError::UnsupportedStmt(Box::new(stmt.clone()))),
             }
@@ -509,7 +513,7 @@ struct SpriteInfo {
     scripts: Vec<CompactString>,
     fields: Vec<(CompactString, CompactString)>,
     funcs: Vec<Function>,
-    costumes: Vec<(CompactString, CompactString)>,
+    costumes: Vec<(CompactString, Rc<(Vec<u8>, Option<(f64, f64)>, CompactString)>)>,
 
     active_costume: Option<usize>,
     visible: bool,
@@ -600,11 +604,11 @@ pub fn translate(source: &str) -> Result<(CompactString, CompactString), Transla
             stage.get_or_init(|| sprite_info.clone());
 
             for costume in sprite.costumes.iter() {
-                let content = match &costume.init {
-                    Value::String(s) => s,
+                let info = match &costume.init {
+                    Value::Image(x) => x.clone(),
                     _ => panic!(), // the parser lib would never do this
                 };
-                sprite_info.costumes.push((costume.def.trans_name.clone(), content.clone()));
+                sprite_info.costumes.push((costume.def.trans_name.clone(), info.clone()));
             }
             for field in sprite.fields.iter() {
                 let value = wrap(ScriptInfo::new(stage.get().unwrap()).translate_value(&field.init)?);
@@ -645,14 +649,6 @@ pub fn translate(source: &str) -> Result<(CompactString, CompactString), Transla
         for (i, sprite) in role_info.sprites.iter().enumerate() {
             let mut content = String::new();
 
-            if !sprite.costumes.is_empty() {
-                content += "costumes = {\n";
-                for (costume, _) in sprite.costumes.iter() {
-                    writeln!(&mut content, "    '{}': images.{}_cst_{},", costume, sprite.name, costume).unwrap();
-                }
-                content += "}\n\n";
-            }
-
             for (field, value) in sprite.fields.iter() {
                 writeln!(&mut content, "{} = {}", field, value).unwrap();
             }
@@ -665,9 +661,13 @@ pub fn translate(source: &str) -> Result<(CompactString, CompactString), Transla
                 writeln!(&mut content, "    self.pen_color = ({}, {}, {})", sprite.color.0, sprite.color.1, sprite.color.2).unwrap();
                 writeln!(&mut content, "    self.scale = {}", sprite.scale).unwrap();
                 writeln!(&mut content, "    self.visible = {}", if sprite.visible { "True" } else { "False" }).unwrap();
+
+                for (trans_name, info) in sprite.costumes.iter() {
+                    writeln!(&mut content, "    self.costumes.add(\'{}\', images.{}_cst_{})", escape(&info.2), sprite.name, trans_name).unwrap();
+                }
             }
             match sprite.active_costume {
-                Some(idx) => writeln!(&mut content, "    self.costume = self.costumes['{}']", sprite.costumes[idx].0).unwrap(),
+                Some(idx) => writeln!(&mut content, "    self.costume = '{}'", escape(&sprite.costumes[idx].1.2)).unwrap(),
                 None => content += "    self.costume = None\n",
             }
             content.push('\n');
@@ -692,8 +692,8 @@ pub fn translate(source: &str) -> Result<(CompactString, CompactString), Transla
 
         let mut images = serde_json::Map::new();
         for sprite in role_info.sprites.iter() {
-            for (costume, content) in sprite.costumes.iter() {
-                images.insert(format!("{}_cst_{}", sprite.name, costume), json!(content.clone()));
+            for (costume, info) in sprite.costumes.iter() {
+                images.insert(format!("{}_cst_{}", sprite.name, costume), json!(base64::engine::general_purpose::STANDARD.encode(info.0.as_slice())));
             }
         }
 

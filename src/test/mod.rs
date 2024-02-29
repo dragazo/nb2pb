@@ -253,6 +253,54 @@ def my_onstart_1(self):
 }
 
 #[test]
+fn test_costumes() {
+    let code = get_code(include_str!("projects/costumes.xml")).unwrap();
+    assert_eq!(code.len(), 3);
+    assert_code_eq!(code[0].trim(), r#"
+from netsblox import snap
+
+foo = snap.wrap('0')
+"#.trim());
+    assert_code_eq!(code[1].trim(), r#"
+def __init__(self):
+    self.costume = None
+"#.trim());
+    assert_code_eq!(code[2].trim(), r#"
+def __init__(self):
+    self.pos = (0, 0)
+    self.heading = 90
+    self.pen_color = (80, 80, 80)
+    self.scale = 1
+    self.visible = True
+    self.costumes.add('marcus', images.Sprite_cst_marcus)
+    self.costumes.add('john cena', images.Sprite_cst_john_cena)
+    self.costumes.add('kevin ()', images.Sprite_cst_kevin)
+    self.costume = 'john cena'
+
+@onstart()
+def my_onstart_1(self):
+    self.costume = ''
+    self.costume = ''
+    self.costume = ''
+    self.costume = 'marcus'
+    self.costume = 'john cena'
+    self.costume = 'kevin ()'
+    self.costume = (str(snap.wrap('marcus')))
+    self.costume = (str(snap.wrap('john cena')))
+    self.costume = (str(snap.wrap('kevin ()')))
+    self.costume = (self.costumes.index(self.costume, -1) + 1) % len(self.costumes)
+    self.say((self.costumes.index(self.costume, -1) + 1))
+    self.say((self.costumes.index(self.costume, -1) + 1), duration = '2')
+    self.scale += snap.wrap('12') / 100
+    self.scale = snap.wrap('165') / 100
+    self.say((self.scale * 100))
+    self.say(self.visible, duration = '2')
+    self.visible = True
+    self.visible = False
+"#.trim());
+}
+
+#[test]
 fn test_control() {
     let code = get_code(include_str!("projects/control.xml")).unwrap();
     assert_eq!(code.len(), 3);
