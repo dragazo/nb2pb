@@ -4,15 +4,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  pypi-publish:
+  build:
     strategy:
       fail-fast: false
       matrix:
         platform: [ macOS-latest, windows-latest, ubuntu-latest ]
         python-version: [ '3.7', '3.8', '3.9', '3.10', '3.11' ]
     runs-on: ${{ matrix.platform }}
-    permissions:
-      id-token: write
     steps:
       - uses: actions/checkout@v1
       - uses: actions-rs/toolchain@v1
@@ -28,11 +26,25 @@ jobs:
           pip install --upgrade maturin
           pip install --upgrade cffi
           maturin build --release --features pyo3
-          mkdir dist
-          mv target/wheels/* dist/.
-      - uses: actions/upload-artifact@v1
+      - uses: actions/upload-artifact@v3
         with:
           name: wheel-${{ matrix.platform }}-${{ matrix.python-version }}
-          path: dist/
+          path: target/wheels/
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v3
+        with:
+          path: temp
+      - run: |
+          ls -R temp
+          mkdir dist
+          for x in temp/*; do mv $x/* dist/.; done
+          ls -R dist
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
         if: github.event_name == 'workflow_dispatch'
