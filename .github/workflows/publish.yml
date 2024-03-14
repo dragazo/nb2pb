@@ -9,7 +9,10 @@ jobs:
       fail-fast: false
       matrix:
         platform: [ macOS-latest, windows-latest, ubuntu-latest ]
-        python-version: [ '3.7', '3.8', '3.9', '3.10', '3.11' ]
+        python-version: [
+          '3.7', '3.8', '3.9', '3.10', '3.11', '3.12',
+          'pypy3.7', 'pypy3.8', 'pypy3.9', 'pypy3.10',
+        ]
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v1
@@ -18,14 +21,15 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5~
         with:
           python-version: ${{ matrix.python-version }}
       - run: |
           pip install --upgrade pip
           pip install --upgrade maturin
           pip install --upgrade cffi
-          maturin build --release --features pyo3
+          maturin build --release --sdist --features pyo3
+          ls -R target/wheels/
       - uses: actions/upload-artifact@v3
         with:
           name: wheel-${{ matrix.platform }}-${{ matrix.python-version }}

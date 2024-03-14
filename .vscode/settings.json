@@ -18,13 +18,17 @@
         "vals"
     ],
     "cSpell.words": [
+        "cffi",
         "idents",
         "isinstance",
         "lnot",
+        "maturin",
         "nonhat",
         "pyfunction",
         "pymodule",
         "pypi",
+        "pypy",
+        "sdist",
         "srange",
         "upvars"
     ],
