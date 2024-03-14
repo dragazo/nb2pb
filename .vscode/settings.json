@@ -22,7 +22,11 @@
         "isinstance",
         "lnot",
         "nonhat",
+        "pyfunction",
+        "pymodule",
+        "pypi",
         "srange",
         "upvars"
-    ]
+    ],
+    "rust-analyzer.showUnlinkedFileNotification": false
 }

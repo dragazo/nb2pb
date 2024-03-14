@@ -2,7 +2,10 @@ use pyo3::{prelude::*, exceptions::PyRuntimeError};
 
 #[pyfunction]
 fn translate(xml: &str) -> PyResult<(String, String)> {
-    crate::translate(xml).map_err(|e| PyRuntimeError::new_err(format!("{:?}", e)))
+    match crate::translate(xml) {
+        Ok((a, b)) => Ok((a.to_string(), b.to_string())),
+        Err(e) => Err(PyRuntimeError::new_err(format!("{:?}", e))),
+    }
 }
 
 #[pymodule]

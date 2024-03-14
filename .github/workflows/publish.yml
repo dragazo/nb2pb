@@ -1,45 +1,38 @@
-name: CI
+name: Publish
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-mac-win:
+  pypi-publish:
     strategy:
       fail-fast: false
       matrix:
         platform: [ macOS-latest, windows-latest, ubuntu-latest ]
         python-version: [ '3.7', '3.8', '3.9', '3.10', '3.11' ]
     runs-on: ${{ matrix.platform }}
+    permissions:
+      id-token: write
     steps:
-      - name: checkout
-        uses: actions/checkout@v1
-      - name: Setup Rust environment
-        uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v1
+      - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
-      - name: Setup Python environment
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-      - name: maturin build --release
-        run: |
+      - run: |
           pip install --upgrade pip
           pip install --upgrade maturin
           pip install --upgrade cffi
-          maturin build --release
+          maturin build --release --features pyo3
+          mkdir dist
+          mv target/wheels/* dist/.
       - uses: actions/upload-artifact@v1
-        name: upload-wheel
         with:
           name: wheel-${{ matrix.platform }}-${{ matrix.python-version }}
-          path: target/wheels/
-      - name: Publish to PyPI
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
         if: github.event_name == 'workflow_dispatch'
-        env:
-          TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
-          TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
-        run: |
-          pip install --upgrade twine
-          twine upload --skip-existing target/wheels/*
