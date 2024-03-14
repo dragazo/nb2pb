@@ -26,6 +26,7 @@
         "nonhat",
         "pyfunction",
         "pymodule",
+        "pypa",
         "pypi",
         "pypy",
         "sdist",
