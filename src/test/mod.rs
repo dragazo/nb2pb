@@ -33,6 +33,59 @@ macro_rules! assert_code_eq {
 }
 
 #[test]
+fn test_media() {
+    let got = serde_json::from_str::<serde_json::Value>(&translate(include_str!("projects/media.xml")).unwrap().1).unwrap();
+    let expected = json!({
+        "roles": [
+            {
+                "name": "myRole",
+                "stage_size": [480, 360],
+                "block_sources": [
+                    "netsblox://assets/default-blocks.json",
+                ],
+                "blocks": [],
+                "imports": [
+                    "time",
+                    "math",
+                ],
+                "editors": [
+                    {
+                        "type": "global",
+                        "name": "global",
+                        "value": "from netsblox import snap\n\n",
+                    },
+                    {
+                        "type": "stage",
+                        "name": "Stage",
+                        "value": "def __init__(self):\n    self.costume = None\n\n",
+                    },
+                    {
+                        "type": "sprite",
+                        "name": "Sprite",
+                        "value": "def __init__(self):\n    self.pos = (0, 0)\n    self.heading = 90\n    self.pen_color = (80, 80, 80)\n    self.scale = 1\n    self.visible = True\n    self.costumes.add('untitled', images.Sprite_cst_untitled)\n    self.costumes.add('untitled(2)', images.Sprite_cst_untitled_2)\n    self.costumes.add('untitled(3)', images.Sprite_cst_untitled_3)\n    self.costume = 'untitled(3)'\n\n",
+                    },
+                ],
+                "images": {
+                    "Sprite_cst_untitled": {
+                        "img": "iVBORw0KGgoAAAANSUhEUgAAAAYAAAAKCAYAAACXDi8zAAAAAXNSR0IArs4c6QAAAHNJREFUGFdjZGBgYNjMYOPAwMBg78twpBHEBwFGqOB+MIfh/wIfhqOJGBLIkoxQo+qBdAPMGAYGBkewBAhsYbCe/5+BMQHKbYBLbGawQdZFhMQmBqsERgam+diMAvkF7Ow/DH8U4XaABNYzWCiA6ECGEw8A2ZIg+Qd3twEAAAAASUVORK5CYII=",
+                        "center": [0.0, -0.0],
+                    },
+                    "Sprite_cst_untitled_2" : {
+                        "img": "iVBORw0KGgoAAAANSUhEUgAAABIAAAAOCAYAAAAi2ky3AAAAAXNSR0IArs4c6QAAAQ1JREFUOE+dk9FxwjAQRJ9EA5RACQoNYA/8JyXQASUQd0A6cAmhgIxN/pNxCSnBBcRWOFkzthV5DNy3dm93b6W4Z0yRoHlGsXQwS03LmSot1SSPKZYsSLBsPHAFGPAkPTCnIYsTyeYFRyCZFWw50YZEokK3e9AHFKIgNiWWMzhbP0BFlda9oriK+qpKgJcQGG7oiNYfouIYqCjFuwQ5aw9QmML4PF48oL4S5vzyRpWK9JtG8fS5QTevLlgrntuM721+E3rwaEwkwdFkfO3e7ycyxcpb27tArVN0eoRofHKxp0QZcrFuBg2eWtBd7X/gsfeuwVMHmOtRT+gbLOWLbRl/EWm2/CcdtHrQ4Clrf6ELaR0aXENQAAAAAElFTkSuQmCC",
+                        "center": [13.0, 38.125],
+                    },
+                    "Sprite_cst_untitled_3": {
+                        "img": "iVBORw0KGgoAAAANSUhEUgAAAAwAAAAQCAYAAAAiYZ4HAAAAAXNSR0IArs4c6QAAAV1JREFUOE91kq9TAkEUxz97J8cx44wXicSLNGnOJYlEIw2b0Yg0q00aNmhG2mrjT8BGxKSB8U4EVt7dnoKHO7Ozc3Pv+74/3lPY84YOyhCWcE9WrF8qRLP83+6r5CNG1xS0FJwDgYFRGQaK6P0vKAe0HegCNSlQcL+E3jHRvABYoKsedA1cAomCiYE7D8aKKCkAPtANN+veBGYKbkvwcKg4ZV+g66UM0ALmCoYG+mWi6UHTkk4F2gqurIcZOAPYjLyUcV9WavoTHQrAwAXgi7StxEnmZ/3q4MV51CnAoP1l5uEaaFgpYlhSkmgTiTpOo7ZH0nKh6cAZENob7Ph4/ILeDyBnSqC6NR4qnFPYCGtdZBp4cnFv9gB5N4MOYmgeQcdkEsVXkcGyBAm0HOjk3YGpDDOGYYFB9squSdsySnF/BUNZlQIgl+Nmi8gGntcwzvfqPw++mBeAn07/d3jfZf94T+p4L9EAAAAASUVORK5CYII=",
+                        "center": [-24.0, -6.875],
+                    },
+                },
+            },
+        ]
+    });
+    assert_eq!(got, expected);
+}
+
+#[test]
 fn test_operators() {
     let code = get_code(include_str!("projects/operators.xml")).unwrap();
     assert_eq!(code.len(), 3);

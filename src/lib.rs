@@ -43,6 +43,8 @@ pub enum TranslateError {
     UnsupportedStmt(Box<Stmt>),
     UnsupportedHat(Box<Hat>),
 
+    UnknownImageFormat,
+
     Upvars,
     AnyMessage,
     RingTypeQuery,
@@ -684,7 +686,7 @@ pub fn translate(source: &str) -> Result<(CompactString, CompactString), Transla
             }
 
             editors.push(json!({
-                "type": if i == 0 { "stage" } else { "turtle" },
+                "type": if i == 0 { "stage" } else { "sprite" },
                 "name": sprite.name,
                 "value": content,
             }));
@@ -693,7 +695,17 @@ pub fn translate(source: &str) -> Result<(CompactString, CompactString), Transla
         let mut images = serde_json::Map::new();
         for sprite in role_info.sprites.iter() {
             for (costume, info) in sprite.costumes.iter() {
-                images.insert(format!("{}_cst_{}", sprite.name, costume), json!(base64::engine::general_purpose::STANDARD.encode(info.0.as_slice())));
+                let center = match info.1 {
+                    Some(ui_center) => match image::load_from_memory(&info.0) {
+                        Ok(img) => (ui_center.0 - img.width() as f64 / 2.0, -(ui_center.1 - img.height() as f64 / 2.0)),
+                        Err(_) => return Err(TranslateError::UnknownImageFormat),
+                    }
+                    None => (0.0, 0.0),
+                };
+                images.insert(format!("{}_cst_{}", sprite.name, costume), json!({
+                    "img": base64::engine::general_purpose::STANDARD.encode(info.0.as_slice()),
+                    "center": center,
+                }));
             }
         }
 
@@ -701,11 +713,7 @@ pub fn translate(source: &str) -> Result<(CompactString, CompactString), Transla
             "name": role_info.name,
             "stage_size": role.stage_size,
             "block_sources": [ "netsblox://assets/default-blocks.json" ],
-            "blocks": {
-                "global": [],
-                "stage": [],
-                "turtle": [],
-            },
+            "blocks": [],
             "imports": ["time", "math"],
             "editors": editors,
             "images": images,
@@ -713,7 +721,6 @@ pub fn translate(source: &str) -> Result<(CompactString, CompactString), Transla
     }
 
     let res = json!({
-        "show_blocks": true,
         "roles": roles,
     });
 
