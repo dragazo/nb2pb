@@ -401,6 +401,48 @@ def my_onstart_1(self):
 }
 
 #[test]
+fn test_motion() {
+    let code = get_code(include_str!("projects/motion.xml")).unwrap();
+    assert_eq!(code.len(), 3);
+    assert_code_eq!(code[0].trim(), r#"
+from netsblox import snap
+
+something = snap.wrap('0')
+"#.trim());
+    assert_code_eq!(code[1].trim(), r#"
+last_answer = snap.wrap('')
+
+def __init__(self):
+    self.costume = None
+"#.trim());
+    assert_code_eq!(code[2].trim(), r#"
+def __init__(self):
+    self.pos = (0, 0)
+    self.heading = 90
+    self.pen_color = (80, 80, 80)
+    self.scale = 1
+    self.visible = True
+    self.costume = None
+
+@onstart()
+def my_onstart_1(self):
+    self.forward(snap.wrap('7'))
+    self.turn_right(snap.wrap('21'))
+    self.turn_left(snap.wrap('6'))
+    self.heading = snap.wrap('22')
+    self.pos = (snap.wrap('-25'), snap.wrap('32'))
+    self.x_pos += snap.wrap('8')
+    self.x_pos = snap.wrap('-21')
+    self.y_pos += snap.wrap('-7')
+    self.y_pos = snap.wrap('255')
+    self.keep_on_stage(bounce = True)
+    globals()['something'] = snap.wrap(self.x_pos)
+    globals()['something'] = snap.wrap(self.y_pos)
+    globals()['something'] = snap.wrap(self.heading)
+"#.trim());
+}
+
+#[test]
 fn test_control() {
     let code = get_code(include_str!("projects/control.xml")).unwrap();
     assert_eq!(code.len(), 3);

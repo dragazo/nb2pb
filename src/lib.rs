@@ -445,16 +445,18 @@ impl<'a> ScriptInfo<'a> {
                 }
                 StmtKind::NextCostume => lines.push(format_compact!("self.costume = (self.costumes.index(self.costume, -1) + 1) % len(self.costumes)")),
 
-                StmtKind::SetX { value } => lines.push(format_compact!("self.x_pos = {}{}", self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::SetY { value } => lines.push(format_compact!("self.y_pos = {}{}", self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::SetX { value } => lines.push(format_compact!("self.x_pos = {}{}", wrap(self.translate_expr(value)?), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::SetY { value } => lines.push(format_compact!("self.y_pos = {}{}", wrap(self.translate_expr(value)?), fmt_comment(stmt.info.comment.as_deref()))),
 
-                StmtKind::ChangeX { delta } => lines.push(format_compact!("self.x_pos += {}{}", self.translate_expr(delta)?.0, fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::ChangeY { delta } => lines.push(format_compact!("self.y_pos += {}{}", self.translate_expr(delta)?.0, fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::ChangeX { delta } => lines.push(format_compact!("self.x_pos += {}{}", wrap(self.translate_expr(delta)?), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::ChangeY { delta } => lines.push(format_compact!("self.y_pos += {}{}", wrap(self.translate_expr(delta)?), fmt_comment(stmt.info.comment.as_deref()))),
 
                 StmtKind::Goto { target } => match &target.kind {
                     ExprKind::Value(Value::List(values, _)) if values.len() == 2 => lines.push(format_compact!("self.pos = ({}, {}){}", self.translate_value(&values[0])?.0, self.translate_value(&values[1])?.0, fmt_comment(stmt.info.comment.as_deref()))),
                     _ => lines.push(format_compact!("self.pos = {}{}", self.translate_expr(target)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 }
+                StmtKind::GotoXY { x, y } => lines.push(format_compact!("self.pos = ({}, {}){}", wrap(self.translate_expr(x)?), wrap(self.translate_expr(y)?), fmt_comment(stmt.info.comment.as_deref()))),
+
                 StmtKind::SendLocalMessage { target, msg_type, wait } => {
                     if *wait { unimplemented!() }
                     if target.is_some() { unimplemented!() }
@@ -481,10 +483,10 @@ impl<'a> ScriptInfo<'a> {
                 StmtKind::WaitUntil { condition } => lines.push(format_compact!("while not {}:{}\n    time.sleep(0.05)", wrap(self.translate_expr(condition)?), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::BounceOffEdge => lines.push(format_compact!("self.keep_on_stage(bounce = True){}", fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::Sleep { seconds } => lines.push(format_compact!("time.sleep(+{}){}", wrap(self.translate_expr(seconds)?), fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::Forward { distance } => lines.push(format_compact!("self.forward({}){}", self.translate_expr(distance)?.0, fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::TurnRight { angle } => lines.push(format_compact!("self.turn_right({}){}", self.translate_expr(angle)?.0, fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::TurnLeft { angle } => lines.push(format_compact!("self.turn_left({}){}", self.translate_expr(angle)?.0, fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::SetHeading { value } => lines.push(format_compact!("self.heading = {}{}", self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::Forward { distance } => lines.push(format_compact!("self.forward({}){}", wrap(self.translate_expr(distance)?), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::TurnRight { angle } => lines.push(format_compact!("self.turn_right({}){}", wrap(self.translate_expr(angle)?), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::TurnLeft { angle } => lines.push(format_compact!("self.turn_left({}){}", wrap(self.translate_expr(angle)?), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::SetHeading { value } => lines.push(format_compact!("self.heading = {}{}", wrap(self.translate_expr(value)?), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::Return { value } => lines.push(format_compact!("return {}{}", wrap(self.translate_expr(value)?), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::Stamp => lines.push(format_compact!("self.stamp(){}", fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::Write { content, font_size } => lines.push(format_compact!("self.write({}, size = {}){}", self.translate_expr(content)?.0, self.translate_expr(font_size)?.0, fmt_comment(stmt.info.comment.as_deref()))),
