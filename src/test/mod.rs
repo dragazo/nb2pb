@@ -443,6 +443,45 @@ def my_onstart_1(self):
 }
 
 #[test]
+fn test_pen() {
+    let code = get_code(include_str!("projects/pen.xml")).unwrap();
+    assert_eq!(code.len(), 3);
+    assert_code_eq!(code[0].trim(), r#"
+from netsblox import snap
+
+something = snap.wrap('0')
+"#.trim());
+    assert_code_eq!(code[1].trim(), r#"
+last_answer = snap.wrap('')
+
+def __init__(self):
+    self.costume = None
+"#.trim());
+    assert_code_eq!(code[2].trim(), r#"
+def __init__(self):
+    self.pos = (0, 0)
+    self.heading = 90
+    self.pen_color = (80, 80, 80)
+    self.scale = 1
+    self.visible = True
+    self.costume = None
+
+@onstart()
+def my_onstart_1(self):
+    Stage.clear_drawings()
+    self.drawing = True
+    self.drawing = False
+    globals()['something'] = self.drawing
+    self.pen_color = '#911a44'
+    self.pen_size += snap.wrap('17')
+    self.pen_size = snap.wrap('6')
+    self.stamp()
+    self.write(snap.wrap('test msg!!'), size = snap.wrap('7'))
+    globals()['something'] = Stage.get_drawings()
+"#.trim());
+}
+
+#[test]
 fn test_control() {
     let code = get_code(include_str!("projects/control.xml")).unwrap();
     assert_eq!(code.len(), 3);
