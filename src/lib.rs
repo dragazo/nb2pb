@@ -351,6 +351,8 @@ impl<'a> ScriptInfo<'a> {
             ExprKind::YPos => ("self.y_pos".into(), Type::Unknown),
             ExprKind::Heading => ("self.heading".into(), Type::Unknown),
 
+            ExprKind::Answer => (format_compact!("{}.last_answer", self.stage.name), Type::Wrapped),
+
             ExprKind::MouseX => (format_compact!("{}.mouse_pos[0]", self.stage.name), Type::Unknown),
             ExprKind::MouseY => (format_compact!("{}.mouse_pos[1]", self.stage.name), Type::Unknown),
 
@@ -360,8 +362,9 @@ impl<'a> ScriptInfo<'a> {
             ExprKind::Latitude => (format_compact!("{}.gps_location[0]", self.stage.name), Type::Unknown),
             ExprKind::Longitude => (format_compact!("{}.gps_location[1]", self.stage.name), Type::Unknown),
 
-            ExprKind::PenDown => ("self.drawing".into(), Type::Wrapped), // bool is considered wrapped
+            ExprKind::KeyDown { key } => (format_compact!("{}.is_key_down({})", self.stage.name, self.translate_expr(key)?.0), Type::Wrapped), // bool is considered wrapped
 
+            ExprKind::PenDown => ("self.drawing".into(), Type::Wrapped), // bool is considered wrapped
             ExprKind::Size => ("(self.scale * 100)".into(), Type::Wrapped),
             ExprKind::IsVisible => ("self.visible".into(), Type::Wrapped), // bool is considered wrapped
 
@@ -491,6 +494,7 @@ impl<'a> ScriptInfo<'a> {
                 StmtKind::ChangeSize { delta } => lines.push(format_compact!("self.scale += {} / 100{}", wrap(self.translate_expr(delta)?), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::SetSize { value } => lines.push(format_compact!("self.scale = {} / 100{}", wrap(self.translate_expr(value)?), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::Clone { target } => lines.push(format_compact!("{}.clone(){}", self.translate_expr(target)?.0, fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::Ask { prompt } => lines.push(format_compact!("{}.last_answer = snap.wrap(input({})){}", self.stage.name, self.translate_expr(prompt)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 _ => return Err(TranslateError::UnsupportedStmt(Box::new(stmt.clone()))),
             }
         }
@@ -589,9 +593,11 @@ def my_oncondition{idx}(self):
 /// On success, returns the project name and project json content as a tuple.
 pub fn translate(source: &str) -> Result<(CompactString, CompactString), TranslateError> {
     let parser = Parser {
-        name_transformer: Rc::new(netsblox_ast::util::c_ident),
-        autofill_generator: Rc::new(|x| Ok(format_compact!("_{x}"))),
+        name_transformer: Box::new(netsblox_ast::util::c_ident),
+        autofill_generator: Box::new(|x| Ok(format_compact!("_{x}"))),
         omit_nonhat_scripts: true, // we don't need dangling blocks of code since they can't do anything
+        expr_replacements: vec![],
+        stmt_replacements: vec![],
     };
     let project = parser.parse(source)?;
     if project.roles.is_empty() { return Err(TranslateError::NoRoles) }
@@ -655,6 +661,11 @@ pub fn translate(source: &str) -> Result<(CompactString, CompactString), Transla
                 writeln!(&mut content, "{} = {}", field, value).unwrap();
             }
             if !sprite.fields.is_empty() { content.push('\n'); }
+
+            if i == 0 { // don't generate these for sprites
+                content += "last_answer = snap.wrap('')\n";
+                content.push('\n');
+            }
 
             content += "def __init__(self):\n";
             if i != 0 { // don't generate these for stage

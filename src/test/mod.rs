@@ -57,7 +57,7 @@ fn test_media() {
                     {
                         "type": "stage",
                         "name": "Stage",
-                        "value": "def __init__(self):\n    self.costume = None\n\n",
+                        "value": "last_answer = snap.wrap('')\n\ndef __init__(self):\n    self.costume = None\n\n",
                     },
                     {
                         "type": "sprite",
@@ -174,6 +174,8 @@ def another():
     return snap.wrap('hello')
 "#.trim());
     assert_code_eq!(code[1].trim(), r#"
+last_answer = snap.wrap('')
+
 def __init__(self):
     self.costume = None
 "#.trim());
@@ -261,6 +263,8 @@ def foobar():
     a = snap.wrap(len('hello world'))
 "#.trim());
     assert_code_eq!(code[1].trim(), r#"
+last_answer = snap.wrap('')
+
 def __init__(self):
     self.costume = None
 "#.trim());
@@ -286,6 +290,8 @@ def some_blocks_stuff():
     pass
 "#.trim());
     assert_code_eq!(code[1].trim(), r#"
+last_answer = snap.wrap('')
+
 def __init__(self):
     self.costume = None
 "#.trim());
@@ -306,8 +312,8 @@ def my_onstart_1(self):
 }
 
 #[test]
-fn test_costumes() {
-    let code = get_code(include_str!("projects/costumes.xml")).unwrap();
+fn test_looks() {
+    let code = get_code(include_str!("projects/looks.xml")).unwrap();
     assert_eq!(code.len(), 3);
     assert_code_eq!(code[0].trim(), r#"
 from netsblox import snap
@@ -315,6 +321,8 @@ from netsblox import snap
 foo = snap.wrap('0')
 "#.trim());
     assert_code_eq!(code[1].trim(), r#"
+last_answer = snap.wrap('')
+
 def __init__(self):
     self.costume = None
 "#.trim());
@@ -354,6 +362,45 @@ def my_onstart_1(self):
 }
 
 #[test]
+fn test_sensing() {
+    let code = get_code(include_str!("projects/sensing.xml")).unwrap();
+    assert_eq!(code.len(), 3);
+    assert_code_eq!(code[0].trim(), r#"
+from netsblox import snap
+
+something = snap.wrap('0')
+"#.trim());
+    assert_code_eq!(code[1].trim(), r#"
+last_answer = snap.wrap('')
+
+def __init__(self):
+    self.costume = None
+"#.trim());
+    assert_code_eq!(code[2].trim(), r#"
+def __init__(self):
+    self.pos = (0, 0)
+    self.heading = 90
+    self.pen_color = (80, 80, 80)
+    self.scale = 1
+    self.visible = True
+    self.costume = None
+
+@onstart()
+def my_onstart_1(self):
+    Stage.last_answer = snap.wrap(input('hello world?'))
+    globals()['something'] = Stage.last_answer
+    globals()['something'] = snap.wrap(Stage.mouse_pos[0])
+    globals()['something'] = snap.wrap(Stage.mouse_pos[1])
+    globals()['something'] = Stage.is_key_down('space')
+    globals()['something'] = Stage.is_key_down('g')
+    globals()['something'] = snap.wrap(Stage.gps_location[0])
+    globals()['something'] = snap.wrap(Stage.gps_location[1])
+    globals()['something'] = snap.wrap(Stage.width)
+    globals()['something'] = snap.wrap(Stage.height)
+"#.trim());
+}
+
+#[test]
 fn test_control() {
     let code = get_code(include_str!("projects/control.xml")).unwrap();
     assert_eq!(code.len(), 3);
@@ -364,6 +411,8 @@ foo = snap.wrap('Init Foo!!')
 bar = snap.wrap('Init Bar!!')
 "#.trim());
     assert_code_eq!(code[1].trim(), r#"
+last_answer = snap.wrap('')
+
 def __init__(self):
     self.costume = None
 "#.trim());
@@ -380,6 +429,7 @@ def __init__(self):
 def my_onstart_1(self):
     time.sleep(+snap.wrap('2.4'))
     nb.send_message('local::my msg thing')
+    return snap.wrap('765')
 
 @onkey('space')
 def my_onkey_2(self):
@@ -461,6 +511,8 @@ def barkbark():
     a = snap.srange('1', '100').fold((lambda _1, _2: (_1 + _2)))
 "#.trim());
     assert_code_eq!(code[1].trim(), r#"
+last_answer = snap.wrap('')
+
 def __init__(self):
     self.costume = None
 "#.trim());

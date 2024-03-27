@@ -21,8 +21,8 @@ name = "nb2pb"
 path = "src/main.rs"
 
 [dependencies]
-netsblox-ast = "=0.5.7"
-# netsblox-ast = { path = "../netsblox-ast" }
+# netsblox-ast = "=0.5.7"
+netsblox-ast = { path = "../netsblox-ast" }
 lazy_static = "1.4"
 serde_json = "1.0"
 regex = "1.10"
