@@ -405,9 +405,17 @@ impl<'a> ScriptInfo<'a> {
                 }
                 StmtKind::IfElse { condition, then, otherwise } => {
                     let condition = wrap(self.translate_expr(condition)?);
-                    let then = self.translate_stmts(then)?;
-                    let otherwise = self.translate_stmts(otherwise)?;
-                    lines.push(format_compact!("if {}:{}\n{}\nelse:\n{}", condition, fmt_comment(stmt.info.comment.as_deref()), indent(&then), indent(&otherwise)));
+                    let then_code = self.translate_stmts(then)?;
+                    let otherwise_code = self.translate_stmts(otherwise)?;
+
+                    match otherwise.as_slice() {
+                        [Stmt { kind: StmtKind::If { .. } | StmtKind::IfElse { .. }, .. }] => {
+                            lines.push(format_compact!("if {}:{}\n{}\nel{}", condition, fmt_comment(stmt.info.comment.as_deref()), indent(&then_code), otherwise_code));
+                        }
+                        _ => {
+                            lines.push(format_compact!("if {}:{}\n{}\nelse:\n{}", condition, fmt_comment(stmt.info.comment.as_deref()), indent(&then_code), indent(&otherwise_code)));
+                        }
+                    }
                 }
                 StmtKind::TryCatch { code, var, handler } => {
                     let code = self.translate_stmts(code)?;

@@ -656,3 +656,83 @@ def my_onstart_1(self):
         pass
 "#.trim());
 }
+
+#[test]
+fn test_elif_opt() {
+    let code = get_code(include_str!("projects/elif-opt.xml")).unwrap();
+    assert_eq!(code.len(), 3);
+    assert_code_eq!(code[0].trim(), r#"
+from netsblox import snap
+"#.trim());
+    assert_code_eq!(code[1].trim(), r#"
+last_answer = snap.wrap('')
+
+def __init__(self):
+    self.costume = None
+"#.trim());
+    assert_code_eq!(code[2].trim(), r#"
+def __init__(self):
+    self.pos = (0, 0)
+    self.heading = 90
+    self.pen_color = (80, 80, 80)
+    self.scale = 1
+    self.visible = True
+    self.costume = None
+
+@onstart()
+def my_onstart_1(self):
+    a = snap.wrap(0)
+    b = snap.wrap(0)
+    c = snap.wrap(0)
+    if a:
+        self.say('1')
+    elif b:
+        self.say('2')
+    elif c:
+        self.say('3')
+    else:
+        self.say('4')
+    if a:
+        self.say('1')
+    else:
+        self.say('1.5')
+        if b:
+            self.say('2')
+        elif c:
+            self.say('3')
+        else:
+            self.say('4')
+    if a:
+        self.say('1')
+    elif b:
+        self.say('2')
+    else:
+        if c:
+            self.say('3')
+        else:
+            self.say('4')
+        self.say('4.5')
+    if a:
+        self.say('1')
+    elif b:
+        self.say('2')
+    elif c:
+        self.say('3')
+    if a:
+        self.say('1')
+    else:
+        self.say('1.5')
+        if b:
+            self.say('2')
+        elif c:
+            self.say('3')
+    if a:
+        self.say('1')
+    elif b:
+        self.say('2')
+    else:
+        if c:
+            self.say('3')
+        self.say('4.5')
+"#.trim());
+}
