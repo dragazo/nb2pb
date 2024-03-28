@@ -532,7 +532,7 @@ def my_onmouse_3(self, x, y):
 
 @onmouse('down')
 def my_onmouse_4(self, x, y):
-    with Warp():
+    with NoYield():
         globals()['foo'] = snap.wrap('Mouse Down!')
         globals()['foo'] = snap.wrap('more stuff')
 
@@ -605,5 +605,54 @@ def __init__(self):
     self.scale = 1
     self.visible = True
     self.costume = None
+"#.trim());
+}
+
+#[test]
+fn test_empty_blocks() {
+    let code = get_code(include_str!("projects/empty-blocks.xml")).unwrap();
+    assert_eq!(code.len(), 3);
+    assert_code_eq!(code[0].trim(), r#"
+from netsblox import snap
+"#.trim());
+    assert_code_eq!(code[1].trim(), r#"
+last_answer = snap.wrap('')
+
+def __init__(self):
+    self.costume = None
+"#.trim());
+    assert_code_eq!(code[2].trim(), r#"
+def __init__(self):
+    self.pos = (0, 0)
+    self.heading = 90
+    self.pen_color = (80, 80, 80)
+    self.scale = 1
+    self.visible = True
+    self.costume = None
+
+@onstart()
+def my_onstart_1(self):
+    with NoYield():
+        pass
+    for _ in range(+snap.wrap('10')):
+        pass
+    while not True:
+        pass
+    for i in snap.sxrange('1', '10'):
+        pass
+    if True:
+        pass
+    if True:
+        pass
+    else:
+        pass
+    try:
+        pass
+    except Exception as err:
+        pass
+    for item in i:
+        pass
+    while True:
+        pass
 "#.trim());
 }

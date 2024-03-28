@@ -396,7 +396,7 @@ impl<'a> ScriptInfo<'a> {
                 StmtKind::Throw { error } => lines.push(format_compact!("raise RuntimeError(str({})){}", wrap(self.translate_expr(error)?), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::Warp { stmts } => {
                     let code = self.translate_stmts(stmts)?;
-                    lines.push(format_compact!("with Warp():{}\n{}", fmt_comment(stmt.info.comment.as_deref()), indent(&code)));
+                    lines.push(format_compact!("with NoYield():{}\n{}", fmt_comment(stmt.info.comment.as_deref()), indent(&code)));
                 }
                 StmtKind::If { condition, then } => {
                     let condition = wrap(self.translate_expr(condition)?);
