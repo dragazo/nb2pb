@@ -76,7 +76,7 @@ fn translate_var(var: &VariableRef) -> CompactString {
     match &var.location {
         VarLocation::Local => var.trans_name.clone(),
         VarLocation::Field => format_compact!("self.{}", var.trans_name),
-        VarLocation::Global => format_compact!("globals()['{}']", var.trans_name),
+        VarLocation::Global => format_compact!("globals.{}", var.trans_name),
     }
 }
 

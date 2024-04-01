@@ -388,15 +388,15 @@ def __init__(self):
 @onstart()
 def my_onstart_1(self):
     Stage.last_answer = snap.wrap(input('hello world?'))
-    globals()['something'] = Stage.last_answer
-    globals()['something'] = snap.wrap(Stage.mouse_pos[0])
-    globals()['something'] = snap.wrap(Stage.mouse_pos[1])
-    globals()['something'] = Stage.is_key_down('space')
-    globals()['something'] = Stage.is_key_down('g')
-    globals()['something'] = snap.wrap(Stage.gps_location[0])
-    globals()['something'] = snap.wrap(Stage.gps_location[1])
-    globals()['something'] = snap.wrap(Stage.width)
-    globals()['something'] = snap.wrap(Stage.height)
+    globals.something = Stage.last_answer
+    globals.something = snap.wrap(Stage.mouse_pos[0])
+    globals.something = snap.wrap(Stage.mouse_pos[1])
+    globals.something = Stage.is_key_down('space')
+    globals.something = Stage.is_key_down('g')
+    globals.something = snap.wrap(Stage.gps_location[0])
+    globals.something = snap.wrap(Stage.gps_location[1])
+    globals.something = snap.wrap(Stage.width)
+    globals.something = snap.wrap(Stage.height)
 "#.trim());
 }
 
@@ -436,9 +436,9 @@ def my_onstart_1(self):
     self.y_pos += snap.wrap('-7')
     self.y_pos = snap.wrap('255')
     self.keep_on_stage(bounce = True)
-    globals()['something'] = snap.wrap(self.x_pos)
-    globals()['something'] = snap.wrap(self.y_pos)
-    globals()['something'] = snap.wrap(self.heading)
+    globals.something = snap.wrap(self.x_pos)
+    globals.something = snap.wrap(self.y_pos)
+    globals.something = snap.wrap(self.heading)
 "#.trim());
 }
 
@@ -471,13 +471,13 @@ def my_onstart_1(self):
     Stage.clear_drawings()
     self.drawing = True
     self.drawing = False
-    globals()['something'] = self.drawing
+    globals.something = self.drawing
     self.pen_color = '#911a44'
     self.pen_size += snap.wrap('17')
     self.pen_size = snap.wrap('6')
     self.stamp()
     self.write(snap.wrap('test msg!!'), size = snap.wrap('7'))
-    globals()['something'] = Stage.get_drawings()
+    globals.something = Stage.get_drawings()
 "#.trim());
 }
 
@@ -514,57 +514,57 @@ def my_onstart_1(self):
 
 @onkey('space')
 def my_onkey_2(self):
-    while not ((globals()['foo'] + snap.wrap('2')) == snap.wrap('7')):
+    while not ((globals.foo + snap.wrap('2')) == snap.wrap('7')):
         time.sleep(0.05)
     raise RuntimeError(str(snap.wrap('oopsie!')))
 
 @onmouse('up')
 def my_onmouse_3(self, x, y):
-    globals()['foo'] = snap.wrap('Mouse Up!')
-    while not globals()['foo']:
+    globals.foo = snap.wrap('Mouse Up!')
+    while not globals.foo:
         try:
-            for item in globals()['bar']:
-                globals()['foo'] = item[snap.wrap('1') - snap.wrap(1)]
-                globals()['bar'] = item.last
+            for item in globals.bar:
+                globals.foo = item[snap.wrap('1') - snap.wrap(1)]
+                globals.bar = item.last
         except Exception as err:
-            globals()['bar'].append(err)
-            globals()['foo'].append((str(snap.wrap('got error: ')) + str(err)))
+            globals.bar.append(err)
+            globals.foo.append((str(snap.wrap('got error: ')) + str(err)))
 
 @onmouse('down')
 def my_onmouse_4(self, x, y):
     with NoYield():
-        globals()['foo'] = snap.wrap('Mouse Down!')
-        globals()['foo'] = snap.wrap('more stuff')
+        globals.foo = snap.wrap('Mouse Down!')
+        globals.foo = snap.wrap('more stuff')
 
 @onmouse('scroll-up')
 def my_onmouse_5(self, x, y):
-    globals()['foo'] = snap.wrap('Scroll Up!')
+    globals.foo = snap.wrap('Scroll Up!')
     for _ in range(+snap.wrap('6')):
-        globals()['foo'] = snap.wrap('starting...')
+        globals.foo = snap.wrap('starting...')
         nothrow(nb.call)('Chart', 'draw', lines = nothrow(nb.call)('MaunaLoaCO2Data', 'getCO2Trend', startyear = '', endyear = ''), options = '')
-        globals()['foo'] = snap.wrap('done!')
+        globals.foo = snap.wrap('done!')
 
 @onmouse('scroll-down')
 def my_onmouse_6(self, x, y):
-    if (globals()['bar'] or globals()['foo']):
-        globals()['foo'] = snap.wrap('Scroll Down!')
-        globals()['bar'] = snap.wrap('more')
+    if (globals.bar or globals.foo):
+        globals.foo = snap.wrap('Scroll Down!')
+        globals.bar = snap.wrap('more')
     else:
-        globals()['bar'] = snap.wrap('cloning...')
+        globals.bar = snap.wrap('cloning...')
         self.clone()
 
 @nb.on_message('local::my msg thing')
 def my_on_message_7(self):
     while True:
-        globals()['foo'] = (globals()['foo'] if (globals()['foo'] > globals()['bar']) else globals()['bar'])
-        globals()['bar'] = self.clone()
+        globals.foo = (globals.foo if (globals.foo > globals.bar) else globals.bar)
+        globals.bar = self.clone()
 
 @onstart(when = 'clone')
 def my_onstart_8(self):
     for xyz in snap.sxrange('4', '8'):
         if (snap.sqrt(xyz) < snap.wrap('9')):
-            globals()['foo'] = snap.wrap('agony!!')
-            globals()['bar'] = snap.wrap('pain!!')
+            globals.foo = snap.wrap('agony!!')
+            globals.bar = snap.wrap('pain!!')
 "#.trim());
 }
 
