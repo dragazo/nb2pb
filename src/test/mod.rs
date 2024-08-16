@@ -62,7 +62,7 @@ fn test_media() {
                     {
                         "type": "sprite",
                         "name": "Sprite",
-                        "value": "def __init__(self):\n    self.pos = (0, 0)\n    self.heading = 90\n    self.pen_color = (80, 80, 80)\n    self.scale = 1\n    self.visible = True\n    self.costumes.add('untitled', images.Sprite_cst_untitled)\n    self.costumes.add('untitled(2)', images.Sprite_cst_untitled_2)\n    self.costumes.add('untitled(3)', images.Sprite_cst_untitled_3)\n    self.costume = 'untitled(3)'\n\n",
+                        "value": "def __init__(self):\n    self.pos = (0, 0)\n    self.heading = 90\n    self.pen_color = (80, 80, 80)\n    self.scale = 1\n    self.visible = True\n\n    self.costumes.add('untitled', images.Sprite_cst_untitled)\n    self.costumes.add('untitled(2)', images.Sprite_cst_untitled_2)\n    self.costumes.add('untitled(3)', images.Sprite_cst_untitled_3)\n\n    self.costume = 'untitled(3)'\n\n",
                     },
                 ],
                 "images": {
@@ -333,9 +333,11 @@ def __init__(self):
     self.pen_color = (80, 80, 80)
     self.scale = 1
     self.visible = True
+
     self.costumes.add('marcus', images.Sprite_cst_marcus)
     self.costumes.add('john cena', images.Sprite_cst_john_cena)
     self.costumes.add('kevin ()', images.Sprite_cst_kevin)
+
     self.costume = 'john cena'
 
 @onstart()

@@ -687,9 +687,15 @@ pub fn translate(source: &str) -> Result<(CompactString, CompactString), Transla
                 writeln!(&mut content, "    self.scale = {}", sprite.scale).unwrap();
                 writeln!(&mut content, "    self.visible = {}", if sprite.visible { "True" } else { "False" }).unwrap();
 
+                if !sprite.costumes.is_empty() {
+                    content.push('\n');
+                }
                 for (trans_name, info) in sprite.costumes.iter() {
                     writeln!(&mut content, "    self.costumes.add(\'{}\', images.{}_cst_{})", escape(&info.2), sprite.name, trans_name).unwrap();
                 }
+            }
+            if !sprite.costumes.is_empty() {
+                content.push('\n');
             }
             match sprite.active_costume {
                 Some(idx) => writeln!(&mut content, "    self.costume = '{}'", escape(&sprite.costumes[idx].1.2)).unwrap(),
