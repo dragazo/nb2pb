@@ -6,14 +6,13 @@ mod python;
 use std::fmt::Write;
 use std::rc::Rc;
 use std::iter;
+use std::sync::LazyLock;
 
-use once_cell::unsync::OnceCell;
 use compact_str::{CompactString, ToCompactString, format_compact};
 use base64::engine::Engine as Base64Engine;
 use regex::Regex;
 
 #[macro_use] extern crate serde_json;
-#[macro_use] extern crate lazy_static;
 
 pub use netsblox_ast::Error as ParseError;
 use netsblox_ast::{*, util::*};
@@ -21,9 +20,7 @@ use netsblox_ast::{*, util::*};
 #[cfg(test)]
 mod test;
 
-lazy_static! {
-    static ref PY_IDENT_REGEX: Regex = Regex::new(r"^[_a-zA-Z][_a-zA-Z0-9]*$").unwrap();
-}
+static PY_IDENT_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[_a-zA-Z][_a-zA-Z0-9]*$").unwrap());
 fn is_py_ident(sym: &str) -> bool {
     PY_IDENT_REGEX.is_match(sym)
 }
@@ -81,11 +78,11 @@ fn translate_var(var: &VariableRef) -> CompactString {
 }
 
 struct ScriptInfo<'a> {
-    stage: &'a SpriteInfo,
+    stage_name: &'a str,
 }
 impl<'a> ScriptInfo<'a> {
-    fn new(stage: &'a SpriteInfo) -> Self {
-        Self { stage }
+    fn new(stage_name: &'a str) -> Self {
+        Self { stage_name }
     }
     fn translate_value(&mut self, value: &Value) -> Result<(CompactString, Type), TranslateError> {
         Ok(match value {
@@ -179,7 +176,7 @@ impl<'a> ScriptInfo<'a> {
             ExprKind::Entity { trans_name, .. } => (trans_name.clone(), Type::Wrapped), // non-primitives are considered wrapped
 
             ExprKind::ImageOfEntity { entity } => (format_compact!("{}.get_image()", self.translate_expr(entity)?.0), Type::Wrapped), // non-primitives are considered wrapped
-            ExprKind::ImageOfDrawings => (format_compact!("{}.get_drawings()", self.stage.name), Type::Wrapped), // non-primitives are considered wrapped
+            ExprKind::ImageOfDrawings => (format_compact!("{}.get_drawings()", self.stage_name), Type::Wrapped), // non-primitives are considered wrapped
 
             ExprKind::IsTouchingEntity { entity } => (format_compact!("self.is_touching({})", self.translate_expr(entity)?.0), Type::Wrapped), // bool is considered wrapped
 
@@ -351,18 +348,18 @@ impl<'a> ScriptInfo<'a> {
             ExprKind::YPos => ("self.y_pos".into(), Type::Unknown),
             ExprKind::Heading => ("self.heading".into(), Type::Unknown),
 
-            ExprKind::Answer => (format_compact!("{}.last_answer", self.stage.name), Type::Wrapped),
+            ExprKind::Answer => (format_compact!("{}.last_answer", self.stage_name), Type::Wrapped),
 
-            ExprKind::MouseX => (format_compact!("{}.mouse_pos[0]", self.stage.name), Type::Unknown),
-            ExprKind::MouseY => (format_compact!("{}.mouse_pos[1]", self.stage.name), Type::Unknown),
+            ExprKind::MouseX => (format_compact!("{}.mouse_pos[0]", self.stage_name), Type::Unknown),
+            ExprKind::MouseY => (format_compact!("{}.mouse_pos[1]", self.stage_name), Type::Unknown),
 
-            ExprKind::StageWidth => (format_compact!("{}.width", self.stage.name), Type::Unknown),
-            ExprKind::StageHeight => (format_compact!("{}.height", self.stage.name), Type::Unknown),
+            ExprKind::StageWidth => (format_compact!("{}.width", self.stage_name), Type::Unknown),
+            ExprKind::StageHeight => (format_compact!("{}.height", self.stage_name), Type::Unknown),
 
-            ExprKind::Latitude => (format_compact!("{}.gps_location[0]", self.stage.name), Type::Unknown),
-            ExprKind::Longitude => (format_compact!("{}.gps_location[1]", self.stage.name), Type::Unknown),
+            ExprKind::Latitude => (format_compact!("{}.gps_location[0]", self.stage_name), Type::Unknown),
+            ExprKind::Longitude => (format_compact!("{}.gps_location[1]", self.stage_name), Type::Unknown),
 
-            ExprKind::KeyDown { key } => (format_compact!("{}.is_key_down({})", self.stage.name, self.translate_expr(key)?.0), Type::Wrapped), // bool is considered wrapped
+            ExprKind::KeyDown { key } => (format_compact!("{stage_name}.is_key_down({key})", key = self.translate_expr(key)?.0, stage_name = self.stage_name), Type::Wrapped), // bool is considered wrapped
 
             ExprKind::PenDown => ("self.drawing".into(), Type::Wrapped), // bool is considered wrapped
             ExprKind::Size => ("(self.scale * 100)".into(), Type::Wrapped),
@@ -371,6 +368,8 @@ impl<'a> ScriptInfo<'a> {
             ExprKind::RpcError => ("(get_error() or '')".into(), Type::Unknown),
 
             ExprKind::Clone { target } => (format_compact!("{}.clone()", self.translate_expr(target)?.0), Type::Wrapped), // sprites are considered wrapped
+
+            ExprKind::Timer => (format_compact!("{}.timer", self.stage_name), Type::Unknown),
 
             _ => return Err(TranslateError::UnsupportedExpr(Box::new(expr.clone()))),
         })
@@ -499,12 +498,13 @@ impl<'a> ScriptInfo<'a> {
                 StmtKind::Stamp => lines.push(format_compact!("self.stamp(){}", fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::Write { content, font_size } => lines.push(format_compact!("self.write({}, size = {}){}", wrap(self.translate_expr(content)?), wrap(self.translate_expr(font_size)?), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::SetPenDown { value } => lines.push(format_compact!("self.drawing = {}{}", if *value { "True" } else { "False" }, fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::PenClear => lines.push(format_compact!("{}.clear_drawings(){}", self.stage.name, fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::PenClear => lines.push(format_compact!("{}.clear_drawings(){}", self.stage_name, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::SetPenColor { color } => lines.push(format_compact!("self.pen_color = '#{:02x}{:02x}{:02x}'{}", color.0, color.1, color.2, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::ChangeSize { delta } => lines.push(format_compact!("self.scale += {} / 100{}", wrap(self.translate_expr(delta)?), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::SetSize { value } => lines.push(format_compact!("self.scale = {} / 100{}", wrap(self.translate_expr(value)?), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::Clone { target } => lines.push(format_compact!("{}.clone(){}", self.translate_expr(target)?.0, fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::Ask { prompt } => lines.push(format_compact!("{}.last_answer = snap.wrap(input({})){}", self.stage.name, self.translate_expr(prompt)?.0, fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::Ask { prompt } => lines.push(format_compact!("{stage_name}.last_answer = snap.wrap(input({prompt})){comment}", prompt = self.translate_expr(prompt)?.0, stage_name = self.stage_name, comment = fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::ResetTimer => lines.push(format_compact!("{}.timer = 0", self.stage_name)),
                 _ => return Err(TranslateError::UnsupportedStmt(Box::new(stmt.clone()))),
             }
         }
@@ -523,7 +523,6 @@ impl RoleInfo {
     }
 }
 
-#[derive(Clone)]
 struct SpriteInfo {
     name: CompactString,
     scripts: Vec<CompactString>,
@@ -555,7 +554,7 @@ impl SpriteInfo {
             scale: src.scale,
         }
     }
-    fn translate_hat(&mut self, hat: &Hat, stage: &SpriteInfo) -> Result<CompactString, TranslateError> {
+    fn translate_hat(&mut self, hat: &Hat, stage_name: &str) -> Result<CompactString, TranslateError> {
         Ok(match &hat.kind {
             HatKind::OnFlag => format_compact!("@onstart(){}\ndef my_onstart_{}(self):\n", fmt_comment(hat.info.comment.as_deref()), self.scripts.len() + 1),
             HatKind::OnClone => format_compact!("@onstart(when = 'clone'){}\ndef my_onstart_{}(self):\n", fmt_comment(hat.info.comment.as_deref()), self.scripts.len() + 1),
@@ -579,7 +578,7 @@ def my_oncondition{idx}(self):
 "#,
                 comment = fmt_comment(hat.info.comment.as_deref()),
                 idx = self.scripts.len() + 1,
-                condition = wrap(ScriptInfo::new(stage).translate_expr(condition)?))
+                condition = wrap(ScriptInfo::new(stage_name).translate_expr(condition)?))
             }
             HatKind::LocalMessage { msg_type } => match msg_type {
                 Some(msg_type) => format_compact!("@nb.on_message('local::{}'){}\ndef my_on_message_{}(self):\n", escape(msg_type), fmt_comment(hat.info.comment.as_deref()), self.scripts.len() + 1),
@@ -615,11 +614,13 @@ pub fn translate(source: &str) -> Result<(CompactString, CompactString), Transla
     let mut roles = vec![];
     for role in project.roles.iter() {
         let mut role_info = RoleInfo::new(role.name.clone());
-        let stage = OnceCell::new();
+        let mut stage_name = None;
 
         for sprite in role.entities.iter() {
             let mut sprite_info = SpriteInfo::new(sprite);
-            stage.get_or_init(|| sprite_info.clone());
+            if stage_name.is_none() {
+                stage_name = Some(sprite_info.name.clone());
+            }
 
             for costume in sprite.costumes.iter() {
                 let info = match &costume.init {
@@ -629,33 +630,34 @@ pub fn translate(source: &str) -> Result<(CompactString, CompactString), Transla
                 sprite_info.costumes.push((costume.def.trans_name.clone(), info.clone()));
             }
             for field in sprite.fields.iter() {
-                let value = wrap(ScriptInfo::new(stage.get().unwrap()).translate_value(&field.init)?);
+                let value = wrap(ScriptInfo::new(stage_name.as_deref().unwrap()).translate_value(&field.init)?);
                 sprite_info.fields.push((field.def.trans_name.clone(), value));
             }
             for script in sprite.scripts.iter() {
                 let func_def = match script.hat.as_ref() {
-                    Some(x) => sprite_info.translate_hat(x, stage.get().unwrap())?,
+                    Some(x) => sprite_info.translate_hat(x, stage_name.as_deref().unwrap())?,
                     None => continue, // dangling blocks of code need not be translated
                 };
-                let body = ScriptInfo::new(stage.get().unwrap()).translate_stmts(&script.stmts)?;
+                let body = ScriptInfo::new(stage_name.as_deref().unwrap()).translate_stmts(&script.stmts)?;
                 let res = format_compact!("{}{}", func_def, indent(&body));
                 sprite_info.scripts.push(res);
             }
             role_info.sprites.push(sprite_info);
         }
+        let stage_name = &role_info.sprites[0].name;
 
         let mut editors = vec![];
 
         let mut content = String::new();
         content += "from netsblox import snap\n\n";
         for global in role.globals.iter() {
-            let value = wrap(ScriptInfo::new(stage.get().unwrap()).translate_value(&global.init)?);
+            let value = wrap(ScriptInfo::new(stage_name).translate_value(&global.init)?);
             writeln!(&mut content, "{} = {}", global.def.trans_name, value).unwrap();
         }
         if !role.globals.is_empty() { content.push('\n') }
         for func in role.funcs.iter() {
             let params = func.params.iter().map(|v| v.trans_name.as_str());
-            let code = ScriptInfo::new(stage.get().unwrap()).translate_stmts(&func.stmts)?;
+            let code = ScriptInfo::new(stage_name).translate_stmts(&func.stmts)?;
             write!(&mut content, "def {}({}):\n{}\n\n", func.trans_name, Punctuated(params, ", "), indent(&code)).unwrap();
         }
         editors.push(json!({
@@ -697,7 +699,7 @@ pub fn translate(source: &str) -> Result<(CompactString, CompactString), Transla
 
             for func in sprite.funcs.iter() {
                 let params = iter::once("self").chain(func.params.iter().map(|v| v.trans_name.as_str()));
-                let code = ScriptInfo::new(stage.get().unwrap()).translate_stmts(&func.stmts)?;
+                let code = ScriptInfo::new(stage_name).translate_stmts(&func.stmts)?;
                 write!(&mut content, "def {}({}):\n{}\n\n", func.trans_name, Punctuated(params, ", "), indent(&code)).unwrap();
             }
 

@@ -736,3 +736,34 @@ def my_onstart_1(self):
         self.say('4.5')
 "#.trim());
 }
+
+#[test]
+fn test_timer() {
+    let code = get_code(include_str!("projects/timer.xml")).unwrap();
+    assert_eq!(code.len(), 3);
+    assert_code_eq!(code[0].trim(), r#"
+from netsblox import snap
+
+fr = snap.wrap('0')
+"#.trim());
+    assert_code_eq!(code[1].trim(), r#"
+last_answer = snap.wrap('')
+
+def __init__(self):
+    self.costume = None
+"#.trim());
+    assert_code_eq!(code[2].trim(), r#"
+def __init__(self):
+    self.pos = (0, 0)
+    self.heading = 90
+    self.pen_color = (80, 80, 80)
+    self.scale = 1
+    self.visible = True
+    self.costume = None
+
+@onstart()
+def my_onstart_1(self):
+    Stage.timer = 0
+    globals.fr = snap.wrap(Stage.timer)
+"#.trim());
+}
