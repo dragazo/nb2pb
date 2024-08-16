@@ -371,6 +371,8 @@ impl<'a> ScriptInfo<'a> {
 
             ExprKind::Timer => (format_compact!("{}.timer", self.stage_name), Type::Unknown),
 
+            ExprKind::SoundDuration { sound } => (format_compact!("self.sounds.lookup({}).duration", self.translate_expr(sound)?.0), Type::Wrapped), // sounds are considered wrapped
+
             _ => return Err(TranslateError::UnsupportedExpr(Box::new(expr.clone()))),
         })
     }
@@ -451,6 +453,12 @@ impl<'a> ScriptInfo<'a> {
                     lines.push(format_compact!("self.costume = {}{}", costume, fmt_comment(stmt.info.comment.as_deref())));
                 }
                 StmtKind::NextCostume => lines.push(format_compact!("self.costume = (self.costumes.index(self.costume, -1) + 1) % len(self.costumes)")),
+                StmtKind::PlaySound { sound, blocking } => {
+                    let blocking_suffix = if *blocking { ", wait = True" } else { "" };
+                    let sound = self.translate_expr(sound)?.0;
+                    lines.push(format_compact!("self.play_sound({sound}{blocking_suffix}){}", fmt_comment(stmt.info.comment.as_deref())));
+                }
+                StmtKind::StopSounds => lines.push(format_compact!("{}.stop_sounds()", self.stage_name)),
 
                 StmtKind::SetX { value } => lines.push(format_compact!("self.x_pos = {}{}", wrap(self.translate_expr(value)?), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::SetY { value } => lines.push(format_compact!("self.y_pos = {}{}", wrap(self.translate_expr(value)?), fmt_comment(stmt.info.comment.as_deref()))),
@@ -529,6 +537,7 @@ struct SpriteInfo {
     fields: Vec<(CompactString, CompactString)>,
     funcs: Vec<Function>,
     costumes: Vec<(CompactString, Rc<(Vec<u8>, Option<(f64, f64)>, CompactString)>)>,
+    sounds: Vec<(CompactString, Rc<(Vec<u8>, CompactString)>)>,
 
     active_costume: Option<usize>,
     visible: bool,
@@ -543,8 +552,9 @@ impl SpriteInfo {
             name: src.trans_name.clone(),
             scripts: vec![],
             fields: vec![],
-            costumes: vec![],
             funcs: src.funcs.clone(),
+            costumes: vec![],
+            sounds: vec![],
 
             active_costume: src.active_costume,
             visible: src.visible,
@@ -627,7 +637,14 @@ pub fn translate(source: &str) -> Result<(CompactString, CompactString), Transla
                     Value::Image(x) => x.clone(),
                     _ => panic!(), // the parser lib would never do this
                 };
-                sprite_info.costumes.push((costume.def.trans_name.clone(), info.clone()));
+                sprite_info.costumes.push((costume.def.trans_name.clone(), info));
+            }
+            for sound in sprite.sounds.iter() {
+                let info = match &sound.init {
+                    Value::Audio(x) => x.clone(),
+                    _ => panic!(), // the parser lib would never do this
+                };
+                sprite_info.sounds.push((sound.def.trans_name.clone(), info));
             }
             for field in sprite.fields.iter() {
                 let value = wrap(ScriptInfo::new(stage_name.as_deref().unwrap()).translate_value(&field.init)?);
@@ -687,14 +704,21 @@ pub fn translate(source: &str) -> Result<(CompactString, CompactString), Transla
                 writeln!(&mut content, "    self.scale = {}", sprite.scale).unwrap();
                 writeln!(&mut content, "    self.visible = {}", if sprite.visible { "True" } else { "False" }).unwrap();
 
+                if !sprite.sounds.is_empty() {
+                    content.push('\n');
+                }
+                for (trans_name, info) in sprite.sounds.iter() {
+                    writeln!(&mut content, "    self.sounds.add('{}', sounds.{}_snd_{})", escape(&info.1), sprite.name, trans_name).unwrap();
+                }
+
                 if !sprite.costumes.is_empty() {
                     content.push('\n');
                 }
                 for (trans_name, info) in sprite.costumes.iter() {
-                    writeln!(&mut content, "    self.costumes.add(\'{}\', images.{}_cst_{})", escape(&info.2), sprite.name, trans_name).unwrap();
+                    writeln!(&mut content, "    self.costumes.add('{}', images.{}_cst_{})", escape(&info.2), sprite.name, trans_name).unwrap();
                 }
             }
-            if !sprite.costumes.is_empty() {
+            if !sprite.sounds.is_empty() || !sprite.costumes.is_empty() {
                 content.push('\n');
             }
             match sprite.active_costume {
@@ -738,14 +762,24 @@ pub fn translate(source: &str) -> Result<(CompactString, CompactString), Transla
             }
         }
 
+        let mut sounds = serde_json::Map::new();
+        for sprite in role_info.sprites.iter() {
+            for (sound, info) in sprite.sounds.iter() {
+                sounds.insert(format!("{}_snd_{}", sprite.name, sound), json!({
+                    "snd": base64::engine::general_purpose::STANDARD.encode(info.0.as_slice()),
+                }));
+            }
+        }
+
         roles.push(json!({
             "name": role_info.name,
             "stage_size": role.stage_size,
             "block_sources": [ "netsblox://assets/default-blocks.json" ],
             "blocks": [],
-            "imports": ["time", "math"],
+            "imports": ["time", "math", "random"],
             "editors": editors,
             "images": images,
+            "sounds": sounds,
         }));
     }
 
