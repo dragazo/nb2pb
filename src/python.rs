@@ -9,7 +9,7 @@ fn translate(xml: &str) -> PyResult<(String, String)> {
 }
 
 #[pymodule]
-fn nb2pb(_py: Python, m: &PyModule) -> PyResult<()> {
+fn nb2pb(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(translate, m)?)?;
     Ok(())
 }
