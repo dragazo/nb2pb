@@ -557,7 +557,7 @@ impl SpriteInfo {
     fn translate_hat(&mut self, hat: &Hat, stage_name: &str) -> Result<CompactString, TranslateError> {
         Ok(match &hat.kind {
             HatKind::OnFlag => format_compact!("@onstart(){}\ndef my_onstart_{}(self):\n", fmt_comment(hat.info.comment.as_deref()), self.scripts.len() + 1),
-            HatKind::OnClone => format_compact!("@onstart(when = 'clone'){}\ndef my_onstart_{}(self):\n", fmt_comment(hat.info.comment.as_deref()), self.scripts.len() + 1),
+            HatKind::OnClone => format_compact!("@onstart('clone'){}\ndef my_onstart_{}(self):\n", fmt_comment(hat.info.comment.as_deref()), self.scripts.len() + 1),
             HatKind::OnKey { key } => format_compact!("@onkey('{}'){}\ndef my_onkey_{}(self):\n", key, fmt_comment(hat.info.comment.as_deref()), self.scripts.len() + 1),
             HatKind::MouseDown => format_compact!("@onmouse('down'){}\ndef my_onmouse_{}(self, x, y):\n", fmt_comment(hat.info.comment.as_deref()), self.scripts.len() + 1),
             HatKind::MouseUp => format_compact!("@onmouse('up'){}\ndef my_onmouse_{}(self, x, y):\n", fmt_comment(hat.info.comment.as_deref()), self.scripts.len() + 1),

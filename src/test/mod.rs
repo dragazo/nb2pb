@@ -559,7 +559,7 @@ def my_on_message_7(self):
         globals.foo = (globals.foo if (globals.foo > globals.bar) else globals.bar)
         globals.bar = self.clone()
 
-@onstart(when = 'clone')
+@onstart('clone')
 def my_onstart_8(self):
     for xyz in snap.sxrange('4', '8'):
         if (snap.sqrt(xyz) < snap.wrap('9')):
@@ -765,5 +765,51 @@ def __init__(self):
 def my_onstart_1(self):
     Stage.timer = 0
     globals.fr = snap.wrap(Stage.timer)
+"#.trim());
+}
+
+#[test]
+fn test_cloning() {
+    let code = get_code(include_str!("projects/cloning.xml")).unwrap();
+    assert_eq!(code.len(), 4);
+    assert_code_eq!(code[0].trim(), r#"
+from netsblox import snap
+
+fr = snap.wrap('0')
+"#.trim());
+    assert_code_eq!(code[1].trim(), r#"
+last_answer = snap.wrap('')
+
+def __init__(self):
+    self.costume = None
+"#.trim());
+    assert_code_eq!(code[2].trim(), r#"
+def __init__(self):
+    self.pos = (0, 0)
+    self.heading = 90
+    self.pen_color = (80, 80, 80)
+    self.scale = 1
+    self.visible = True
+    self.costume = None
+
+@onstart()
+def my_onstart_1(self):
+    self.clone()
+    Sprite_2.clone()
+    globals.fr = self.clone()
+    globals.fr = Sprite_2.clone()
+
+@onstart('clone')
+def my_onstart_2(self):
+    self.say('what is my purpose?')
+"#.trim());
+assert_code_eq!(code[3].trim(), r#"
+def __init__(self):
+    self.pos = (-117, 147)
+    self.heading = 90
+    self.pen_color = (149, 0, 219)
+    self.scale = 1
+    self.visible = True
+    self.costume = None
 "#.trim());
 }
