@@ -34,7 +34,7 @@ jobs:
           pip install --upgrade cffi
           maturin build --release --sdist --features pyo3
           ls -R target/wheels/
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: wheel-${{ matrix.platform }}-${{ matrix.python-version }}
           path: target/wheels/
@@ -45,7 +45,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           path: temp
       - run: |
