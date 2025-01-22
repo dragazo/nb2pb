@@ -364,8 +364,10 @@ def my_onstart_1(self):
     self.costume = (self.costumes.index(self.costume, -1) + 1) % len(self.costumes)
     self.say((self.costumes.index(self.costume, -1) + 1))
     self.say((self.costumes.index(self.costume, -1) + 1), duration = '2')
-    self.scale += snap.wrap('12') / 100
-    self.scale = snap.wrap('165') / 100
+    self.scale += 12 / 100
+    self.scale = 165 / 100
+    self.scale += snap.wrap((str(snap.wrap('gferg')))) / 100
+    self.scale = snap.wrap((str(snap.wrap('fgnrt')))) / 100
     self.say((self.scale * 100))
     self.say(self.visible, duration = '2')
     self.visible = True
@@ -462,7 +464,7 @@ fn test_motion() {
     assert_code_eq!(code[0].trim(), r#"
 from netsblox import snap
 
-something = snap.wrap('0')
+something = snap.wrap('158')
 "#.trim());
     assert_code_eq!(code[1].trim(), r#"
 last_answer = snap.wrap('')
@@ -472,8 +474,8 @@ def __init__(self):
 "#.trim());
     assert_code_eq!(code[2].trim(), r#"
 def __init__(self):
-    self.pos = (0, 0)
-    self.heading = 90
+    self.pos = (-21, 172)
+    self.heading = 183
     self.pen_color = (80, 80, 80)
     self.scale = 1
     self.visible = True
@@ -481,19 +483,28 @@ def __init__(self):
 
 @onstart()
 def my_onstart_1(self):
-    self.forward(snap.wrap('7'))
-    self.turn_right(snap.wrap('21'))
-    self.turn_left(snap.wrap('6'))
-    self.heading = snap.wrap('22')
-    self.pos = (snap.wrap('-25'), snap.wrap('32'))
-    self.x_pos += snap.wrap('8')
-    self.x_pos = snap.wrap('-21')
-    self.y_pos += snap.wrap('-7')
-    self.y_pos = snap.wrap('255')
+    self.forward(7)
+    self.turn_right(21)
+    self.turn_left(6)
+    self.heading = 22
+    self.pos = (-25, 32)
+    self.x_pos += 8
+    self.x_pos = -21
+    self.y_pos += -7
+    self.y_pos = 255
     self.keep_on_stage(bounce = True)
     globals.something = snap.wrap(self.x_pos)
     globals.something = snap.wrap(self.y_pos)
     globals.something = snap.wrap(self.heading)
+    self.forward(snap.wrap((str(snap.wrap('abc')))))
+    self.turn_right(snap.wrap((str(snap.wrap('vr')))))
+    self.turn_left(snap.wrap((str(snap.wrap('gerh')))))
+    self.heading = snap.wrap((str(snap.wrap('gjrt'))))
+    self.pos = (snap.wrap((str(snap.wrap('kyu')))), snap.wrap((str(snap.wrap('erg')))))
+    self.x_pos += snap.wrap((str(snap.wrap('er'))))
+    self.x_pos = snap.wrap((str(snap.wrap('dbnt'))))
+    self.y_pos += snap.wrap((str(snap.wrap('tyjk'))))
+    self.y_pos = snap.wrap((str(snap.wrap('ghn'))))
 "#.trim());
 }
 
@@ -563,7 +574,8 @@ def __init__(self):
 
 @onstart()
 def my_onstart_1(self):
-    time.sleep(+snap.wrap('2.4'))
+    time.sleep(2.4)
+    time.sleep(+snap.wrap((str(snap.wrap('merp')))))
     nb.send_message('local::my msg thing')
     return snap.wrap('765')
 
@@ -594,7 +606,11 @@ def my_onmouse_4(self, x, y):
 @onmouse('scroll-up')
 def my_onmouse_5(self, x, y):
     globals.foo = snap.wrap('Scroll Up!')
-    for _ in range(+snap.wrap('6')):
+    for _ in range(6):
+        globals.foo = snap.wrap('starting...')
+        nothrow(nb.call)('Chart', 'draw', lines = nothrow(nb.call)('MaunaLoaCO2Data', 'getCO2Trend', startyear = '', endyear = ''), options = '')
+        globals.foo = snap.wrap('done!')
+    for _ in range(+snap.wrap((str(snap.wrap('seven'))))):
         globals.foo = snap.wrap('starting...')
         nothrow(nb.call)('Chart', 'draw', lines = nothrow(nb.call)('MaunaLoaCO2Data', 'getCO2Trend', startyear = '', endyear = ''), options = '')
         globals.foo = snap.wrap('done!')
@@ -689,7 +705,7 @@ def __init__(self):
 def my_onstart_1(self):
     with NoYield():
         pass
-    for _ in range(+snap.wrap('10')):
+    for _ in range(10):
         pass
     while not True:
         pass

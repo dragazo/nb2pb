@@ -68,6 +68,10 @@ fn wrap(val: (CompactString, Type)) -> CompactString {
         Type::Unknown => format_compact!("snap.wrap({})", val.0),
     }
 }
+fn wrap_number(val: (CompactString, Type), coerce: bool) -> CompactString {
+    val.0.chars().next().filter(|&ch| (ch == '"' || ch == '\'') && val.0.len() > 1 && val.0.ends_with(ch))
+        .and_then(|_| val.0[1..val.0.len()-1].parse::<f64>().ok().map(|f| f.to_string().into())).unwrap_or_else(|| format_compact!("{}{}", coerce.then(|| "+").unwrap_or_default(), wrap(val)))
+}
 
 fn translate_var(var: &VariableRef) -> CompactString {
     match &var.location {
@@ -439,9 +443,9 @@ impl<'a> ScriptInfo<'a> {
                     lines.push(format_compact!("for {} in {}:{}\n{}", var.trans_name, items, fmt_comment(stmt.info.comment.as_deref()), indent(&code)));
                 }
                 StmtKind::Repeat { times, stmts } => {
-                    let times = wrap(self.translate_expr(times)?);
+                    let times = wrap_number(self.translate_expr(times)?, true);
                     let code = self.translate_stmts(stmts)?;
-                    lines.push(format_compact!("for _ in range(+{}):{}\n{}", times, fmt_comment(stmt.info.comment.as_deref()), indent(&code)));
+                    lines.push(format_compact!("for _ in range({}):{}\n{}", times, fmt_comment(stmt.info.comment.as_deref()), indent(&code)));
                 }
                 StmtKind::UntilLoop { condition, stmts } => {
                     let condition = wrap(self.translate_expr(condition)?);
@@ -460,17 +464,17 @@ impl<'a> ScriptInfo<'a> {
                 }
                 StmtKind::StopSounds => lines.push(format_compact!("{}.stop_sounds()", self.stage_name)),
 
-                StmtKind::SetX { value } => lines.push(format_compact!("self.x_pos = {}{}", wrap(self.translate_expr(value)?), fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::SetY { value } => lines.push(format_compact!("self.y_pos = {}{}", wrap(self.translate_expr(value)?), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::SetX { value } => lines.push(format_compact!("self.x_pos = {}{}", wrap_number(self.translate_expr(value)?, false), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::SetY { value } => lines.push(format_compact!("self.y_pos = {}{}", wrap_number(self.translate_expr(value)?, false), fmt_comment(stmt.info.comment.as_deref()))),
 
-                StmtKind::ChangeX { delta } => lines.push(format_compact!("self.x_pos += {}{}", wrap(self.translate_expr(delta)?), fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::ChangeY { delta } => lines.push(format_compact!("self.y_pos += {}{}", wrap(self.translate_expr(delta)?), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::ChangeX { delta } => lines.push(format_compact!("self.x_pos += {}{}", wrap_number(self.translate_expr(delta)?, false), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::ChangeY { delta } => lines.push(format_compact!("self.y_pos += {}{}", wrap_number(self.translate_expr(delta)?, false), fmt_comment(stmt.info.comment.as_deref()))),
 
                 StmtKind::Goto { target } => match &target.kind {
                     ExprKind::Value(Value::List(values, _)) if values.len() == 2 => lines.push(format_compact!("self.pos = ({}, {}){}", self.translate_value(&values[0])?.0, self.translate_value(&values[1])?.0, fmt_comment(stmt.info.comment.as_deref()))),
                     _ => lines.push(format_compact!("self.pos = {}{}", self.translate_expr(target)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 }
-                StmtKind::GotoXY { x, y } => lines.push(format_compact!("self.pos = ({}, {}){}", wrap(self.translate_expr(x)?), wrap(self.translate_expr(y)?), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::GotoXY { x, y } => lines.push(format_compact!("self.pos = ({}, {}){}", wrap_number(self.translate_expr(x)?, false), wrap_number(self.translate_expr(y)?, false), fmt_comment(stmt.info.comment.as_deref()))),
 
                 StmtKind::SendLocalMessage { target, msg_type, wait } => {
                     if *wait { unimplemented!() }
@@ -497,19 +501,19 @@ impl<'a> ScriptInfo<'a> {
                 StmtKind::SetVisible { value } => lines.push(format_compact!("self.visible = {}{}", if *value { "True" } else { "False" }, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::WaitUntil { condition } => lines.push(format_compact!("while not {}:{}\n    time.sleep(0.05)", wrap(self.translate_expr(condition)?), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::BounceOffEdge => lines.push(format_compact!("self.keep_on_stage(bounce = True){}", fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::Sleep { seconds } => lines.push(format_compact!("time.sleep(+{}){}", wrap(self.translate_expr(seconds)?), fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::Forward { distance } => lines.push(format_compact!("self.forward({}){}", wrap(self.translate_expr(distance)?), fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::TurnRight { angle } => lines.push(format_compact!("self.turn_right({}){}", wrap(self.translate_expr(angle)?), fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::TurnLeft { angle } => lines.push(format_compact!("self.turn_left({}){}", wrap(self.translate_expr(angle)?), fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::SetHeading { value } => lines.push(format_compact!("self.heading = {}{}", wrap(self.translate_expr(value)?), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::Sleep { seconds } => lines.push(format_compact!("time.sleep({}){}", wrap_number(self.translate_expr(seconds)?, true), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::Forward { distance } => lines.push(format_compact!("self.forward({}){}", wrap_number(self.translate_expr(distance)?, false), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::TurnRight { angle } => lines.push(format_compact!("self.turn_right({}){}", wrap_number(self.translate_expr(angle)?, false), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::TurnLeft { angle } => lines.push(format_compact!("self.turn_left({}){}", wrap_number(self.translate_expr(angle)?, false), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::SetHeading { value } => lines.push(format_compact!("self.heading = {}{}", wrap_number(self.translate_expr(value)?, false), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::Return { value } => lines.push(format_compact!("return {}{}", wrap(self.translate_expr(value)?), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::Stamp => lines.push(format_compact!("self.stamp(){}", fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::Write { content, font_size } => lines.push(format_compact!("self.write({}, size = {}){}", wrap(self.translate_expr(content)?), wrap(self.translate_expr(font_size)?), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::SetPenDown { value } => lines.push(format_compact!("self.drawing = {}{}", if *value { "True" } else { "False" }, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::PenClear => lines.push(format_compact!("{}.clear_drawings(){}", self.stage_name, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::SetPenColor { color } => lines.push(format_compact!("self.pen_color = '#{:02x}{:02x}{:02x}'{}", color.0, color.1, color.2, fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::ChangeSize { delta } => lines.push(format_compact!("self.scale += {} / 100{}", wrap(self.translate_expr(delta)?), fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::SetSize { value } => lines.push(format_compact!("self.scale = {} / 100{}", wrap(self.translate_expr(value)?), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::ChangeSize { delta } => lines.push(format_compact!("self.scale += {} / 100{}", wrap_number(self.translate_expr(delta)?, false), fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::SetSize { value } => lines.push(format_compact!("self.scale = {} / 100{}", wrap_number(self.translate_expr(value)?, false), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::Clone { target } => lines.push(format_compact!("{}.clone(){}", self.translate_expr(target)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::Ask { prompt } => lines.push(format_compact!("{stage_name}.last_answer = snap.wrap(input({prompt})){comment}", prompt = self.translate_expr(prompt)?.0, stage_name = self.stage_name, comment = fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::ResetTimer => lines.push(format_compact!("{}.timer = 0", self.stage_name)),
