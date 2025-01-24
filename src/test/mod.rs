@@ -155,8 +155,8 @@ def foo():
     bar = snap.lnot(False)
     bar = False
     bar = True
-    bar = snap.wrap((str(snap.wrap('hello ')) + str(snap.wrap('world'))))
-    bar = snap.wrap((str(snap.wrap('hello ')) + str(snap.wrap('world')) + str(snap.wrap('again'))))
+    bar = snap.wrap('hello world')
+    bar = snap.wrap('hello worldagain')
     bar = snap.wrap(''.join(str(x) for x in baz()))
     bar = snap.wrap(len('world'))
     bar = snap.split('hello world', ' ')
@@ -236,7 +236,7 @@ def foobar():
     a = a.json
     for item in a:
         a.append(item)
-        a.append('abc')
+        a.append(snap.wrap('abc'))
         a.pop()
         del a[snap.wrap('1') - snap.wrap(1)]
         del a[snap.wrap('7') - snap.wrap(1)]
@@ -245,7 +245,7 @@ def foobar():
         a.insert('1', 'abc')
         a.insert('16', 'abc')
         a.insert((snap.wrap('1') + snap.wrap('3')), 'abc')
-        a.append('abc')
+        a.append(snap.wrap('abc'))
         a.insert_rand('abc')
         a[snap.wrap('1') - snap.wrap(1)] = 'zyx'
         a[snap.wrap('6') - snap.wrap(1)] = 'zyx'
@@ -358,16 +358,16 @@ def my_onstart_1(self):
     self.costume = 'marcus'
     self.costume = 'john cena'
     self.costume = 'kevin ()'
-    self.costume = (str(snap.wrap('marcus')))
-    self.costume = (str(snap.wrap('john cena')))
-    self.costume = (str(snap.wrap('kevin ()')))
+    self.costume = 'marcus'
+    self.costume = 'john cena'
+    self.costume = 'kevin ()'
     self.costume = (self.costumes.index(self.costume, -1) + 1) % len(self.costumes)
     self.say((self.costumes.index(self.costume, -1) + 1))
     self.say((self.costumes.index(self.costume, -1) + 1), duration = '2')
     self.scale += 12 / 100
     self.scale = 165 / 100
-    self.scale += snap.wrap((str(snap.wrap('gferg')))) / 100
-    self.scale = snap.wrap((str(snap.wrap('fgnrt')))) / 100
+    self.scale += snap.wrap('gferg') / 100
+    self.scale = snap.wrap('fgnrt') / 100
     self.say((self.scale * 100))
     self.say(self.visible, duration = '2')
     self.visible = True
@@ -496,15 +496,15 @@ def my_onstart_1(self):
     globals.something = snap.wrap(self.x_pos)
     globals.something = snap.wrap(self.y_pos)
     globals.something = snap.wrap(self.heading)
-    self.forward(snap.wrap((str(snap.wrap('abc')))))
-    self.turn_right(snap.wrap((str(snap.wrap('vr')))))
-    self.turn_left(snap.wrap((str(snap.wrap('gerh')))))
-    self.heading = snap.wrap((str(snap.wrap('gjrt'))))
-    self.pos = (snap.wrap((str(snap.wrap('kyu')))), snap.wrap((str(snap.wrap('erg')))))
-    self.x_pos += snap.wrap((str(snap.wrap('er'))))
-    self.x_pos = snap.wrap((str(snap.wrap('dbnt'))))
-    self.y_pos += snap.wrap((str(snap.wrap('tyjk'))))
-    self.y_pos = snap.wrap((str(snap.wrap('ghn'))))
+    self.forward(snap.wrap('abc'))
+    self.turn_right(snap.wrap('vr'))
+    self.turn_left(snap.wrap('gerh'))
+    self.heading = snap.wrap('gjrt')
+    self.pos = (snap.wrap('kyu'), snap.wrap('erg'))
+    self.x_pos += snap.wrap('er')
+    self.x_pos = snap.wrap('dbnt')
+    self.y_pos += snap.wrap('tyjk')
+    self.y_pos = snap.wrap('ghn')
 "#.trim());
 }
 
@@ -541,11 +541,50 @@ def my_onstart_1(self):
     self.pen_color = '#911a44'
     self.pen_size += 17
     self.pen_size = 6
-    self.pen_size += snap.wrap((str(snap.wrap('help'))))
-    self.pen_size = snap.wrap((str(snap.wrap('me'))))
+    self.pen_size += snap.wrap('help')
+    self.pen_size = snap.wrap('me')
     self.stamp()
     self.write(snap.wrap('test msg!!'), size = snap.wrap('7'))
     globals.something = Stage.get_drawings()
+"#.trim());
+}
+
+#[test]
+fn test_join() {
+    let code = get_code(include_str!("projects/join.xml")).unwrap();
+    assert_eq!(code.len(), 3);
+    assert_code_eq!(code[0].trim(), r#"
+from netsblox import snap
+
+something = snap.wrap('')
+"#.trim());
+    assert_code_eq!(code[1].trim(), r#"
+last_answer = snap.wrap('')
+
+def __init__(self):
+    self.costume = None
+"#.trim());
+    assert_code_eq!(code[2].trim(), r#"
+def __init__(self):
+    self.pos = (0, 0)
+    self.heading = 90
+    self.pen_color = (80, 80, 80)
+    self.scale = 1
+    self.visible = True
+    self.costume = None
+
+@onstart()
+def my_onstart_1(self):
+    globals.something = snap.wrap('')
+    globals.something = snap.wrap('hello')
+    globals.something = snap.wrap('helloworld')
+    globals.something = snap.wrap(f'hello{globals.something}world')
+    globals.something = snap.wrap(f"hello{(snap.wrap('3') * snap.wrap('5'))}world")
+    globals.something = snap.wrap('helloworld')
+    globals.something = snap.wrap('hellohelpworld')
+    globals.something = snap.wrap('hellohelpmeworld')
+    globals.something = snap.wrap(f'hellohelp{globals.something}meworld')
+    globals.something = snap.wrap(f"hellohelp{(snap.wrap('3') + snap.wrap('5'))}meworld")
 "#.trim());
 }
 
@@ -577,7 +616,7 @@ def __init__(self):
 @onstart()
 def my_onstart_1(self):
     time.sleep(2.4)
-    time.sleep(+snap.wrap((str(snap.wrap('merp')))))
+    time.sleep(+snap.wrap('merp'))
     nb.send_message('local::my msg thing')
     return snap.wrap('765')
 
@@ -597,7 +636,7 @@ def my_onmouse_3(self, x, y):
                 globals.bar = item.last
         except Exception as err:
             globals.bar.append(err)
-            globals.foo.append((str(snap.wrap('got error: ')) + str(err)))
+            globals.foo.append(snap.wrap(f'got error: {err}'))
 
 @onmouse('down')
 def my_onmouse_4(self, x, y):
@@ -612,7 +651,7 @@ def my_onmouse_5(self, x, y):
         globals.foo = snap.wrap('starting...')
         nothrow(nb.call)('Chart', 'draw', lines = nothrow(nb.call)('MaunaLoaCO2Data', 'getCO2Trend', startyear = '', endyear = ''), options = '')
         globals.foo = snap.wrap('done!')
-    for _ in range(+snap.wrap((str(snap.wrap('seven'))))):
+    for _ in range(+snap.wrap('seven')):
         globals.foo = snap.wrap('starting...')
         nothrow(nb.call)('Chart', 'draw', lines = nothrow(nb.call)('MaunaLoaCO2Data', 'getCO2Trend', startyear = '', endyear = ''), options = '')
         globals.foo = snap.wrap('done!')

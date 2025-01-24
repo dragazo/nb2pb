@@ -329,16 +329,33 @@ impl<'a> ScriptInfo<'a> {
                 ExprKind::Value(Value::List(values, _)) => (format_compact!("[{}]", values.iter().map(|x| Ok(format_compact!("*{}", wrap(self.translate_value(x)?)))).collect::<Result<Vec<_>,TranslateError>>()?.join(", ")), Type::Unknown),
                 _ => (format_compact!("[y for x in {} for y in x]", wrap(self.translate_expr(lists)?)), Type::Unknown),
             }
-            ExprKind::StrCat { values } => match &values.kind {
-                ExprKind::Value(Value::List(values, _)) => match values.as_slice() {
-                    [] => (CompactString::new("''"), Type::Unknown),
-                    _ => (format_compact!("({})", values.iter().map(|x| Ok(format_compact!("str({})", wrap(self.translate_value(x)?)))).collect::<Result<Vec<_>,TranslateError>>()?.join(" + ")), Type::Unknown),
+            ExprKind::StrCat { values } => {
+                fn as_str_lit(mut s: &str) -> Option<(&str, bool)> {
+                    let mut fmt_str = false;
+                    if s.starts_with('f') { s = &s[1..]; fmt_str = true; }
+                    s.chars().next().filter(|&c| (c == '"' || c == '\'') && s.len() >= 2 && s.ends_with(c)).map(|_| (&s[1..s.len() - 1], fmt_str))
                 }
-                ExprKind::MakeList { values } => match values.as_slice() {
-                    [] => (CompactString::new("''"), Type::Unknown),
-                    _ => (format_compact!("({})", values.iter().map(|x| Ok(format_compact!("str({})", wrap(self.translate_expr(x)?)))).collect::<Result<Vec<_>,TranslateError>>()?.join(" + ")), Type::Unknown),
+                fn handle_segments(segments: Vec<(CompactString, Type)>) -> (CompactString, Type) {
+                    let mut fmt_str = false;
+                    let mut res = CompactString::default();
+                    for segment in segments.iter() {
+                        match as_str_lit(&segment.0) {
+                            Some(lit) => { res.push_str(lit.0); fmt_str |= lit.1; }
+                            None => { write!(res, "{{{}}}", segment.0).unwrap(); fmt_str = true; }
+                        }
+                    }
+                    let quote_char = match (res.contains('\''), res.contains('"')) {
+                        (false, _) => '\'',
+                        (true, false) => '"',
+                        (true, true) => return (format_compact!("({})", segments.into_iter().map(|x| format_compact!("str({})", wrap(x))).collect::<Vec<_>>().join(" + ")), Type::Unknown),
+                    };
+                    (format_compact!("{}{quote_char}{res}{quote_char}", if fmt_str { "f" } else { "" }), Type::Unknown)
                 }
-                _ => (format_compact!("''.join(str(x) for x in {})", wrap(self.translate_expr(values)?)), Type::Unknown),
+                match &values.kind {
+                    ExprKind::Value(Value::List(values, _)) => handle_segments(values.iter().map(|x| self.translate_value(x)).collect::<Result<Vec<_>,_>>()?),
+                    ExprKind::MakeList { values } => handle_segments(values.iter().map(|x| self.translate_expr(x)).collect::<Result<Vec<_>,_>>()?),
+                    _ => (format_compact!("''.join(str(x) for x in {})", wrap(self.translate_expr(values)?)), Type::Unknown),
+                }
             }
 
             ExprKind::UnicodeToChar { value } => (format_compact!("snap.get_chr({})", self.translate_expr(value)?.0), Type::Wrapped),
@@ -393,7 +410,7 @@ impl<'a> ScriptInfo<'a> {
                 StmtKind::ListAssignLast { list, value } => lines.push(format_compact!("{}.last = {}{}", wrap(self.translate_expr(list)?), self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::ListAssignRandom { list, value } => lines.push(format_compact!("{}.rand = {}{}", wrap(self.translate_expr(list)?), self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::ListInsert { list, index, value } => lines.push(format_compact!("{}.insert({}, {}){}", wrap(self.translate_expr(list)?), self.translate_expr(index)?.0, self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
-                StmtKind::ListInsertLast { list, value } => lines.push(format_compact!("{}.append({}){}", wrap(self.translate_expr(list)?), self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
+                StmtKind::ListInsertLast { list, value } => lines.push(format_compact!("{}.append({}){}", wrap(self.translate_expr(list)?), wrap(self.translate_expr(value)?), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::ListInsertRandom { list, value } => lines.push(format_compact!("{}.insert_rand({}){}", wrap(self.translate_expr(list)?), self.translate_expr(value)?.0, fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::ListRemoveLast { list } => lines.push(format_compact!("{}.pop(){}", wrap(self.translate_expr(list)?), fmt_comment(stmt.info.comment.as_deref()))),
                 StmtKind::ListRemove { list, index } => lines.push(format_compact!("del {}[{} - snap.wrap(1)]{}", wrap(self.translate_expr(list)?), wrap(self.translate_expr(index)?), fmt_comment(stmt.info.comment.as_deref()))),
