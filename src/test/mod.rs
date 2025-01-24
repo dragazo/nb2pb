@@ -51,8 +51,8 @@ fn test_media() {
                 ],
                 "editors": [
                     {
-                        "type": "global",
-                        "name": "global",
+                        "type": "globals",
+                        "name": "globals",
                         "value": "from netsblox import snap\n\n",
                     },
                     {

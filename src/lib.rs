@@ -682,8 +682,8 @@ pub fn translate(source: &str) -> Result<(CompactString, CompactString), Transla
             write!(&mut content, "def {}({}):\n{}\n\n", func.trans_name, Punctuated(params, ", "), indent(&code)).unwrap();
         }
         editors.push(json!({
-            "type": "global",
-            "name": "global",
+            "type": "globals",
+            "name": "globals",
             "value": content,
         }));
 
