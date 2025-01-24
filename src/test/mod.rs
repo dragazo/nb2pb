@@ -632,7 +632,7 @@ def my_on_message_7(self):
 
 @onstart('clone')
 def my_onstart_8(self):
-    for xyz in snap.sxrange('4', '8'):
+    for xyz in snap.sxrange(4, 8):
         if (snap.sqrt(xyz) < snap.wrap('9')):
             globals.foo = snap.wrap('agony!!')
             globals.bar = snap.wrap('pain!!')
@@ -709,7 +709,7 @@ def my_onstart_1(self):
         pass
     while not True:
         pass
-    for i in snap.sxrange('1', '10'):
+    for i in snap.sxrange(1, 10):
         pass
     if True:
         pass

@@ -406,7 +406,7 @@ impl<'a> ScriptInfo<'a> {
                 StmtKind::If { condition, then } => {
                     let condition = wrap(self.translate_expr(condition)?);
                     let then = self.translate_stmts(then)?;
-                    lines.push(format_compact!("if {}:{}\n{}", condition, fmt_comment(stmt.info.comment.as_deref()), indent(&then)));
+                    lines.push(format_compact!("if {condition}:{}\n{}", fmt_comment(stmt.info.comment.as_deref()), indent(&then)));
                 }
                 StmtKind::IfElse { condition, then, otherwise } => {
                     let condition = wrap(self.translate_expr(condition)?);
@@ -415,10 +415,10 @@ impl<'a> ScriptInfo<'a> {
 
                     match otherwise.as_slice() {
                         [Stmt { kind: StmtKind::If { .. } | StmtKind::IfElse { .. }, .. }] => {
-                            lines.push(format_compact!("if {}:{}\n{}\nel{}", condition, fmt_comment(stmt.info.comment.as_deref()), indent(&then_code), otherwise_code));
+                            lines.push(format_compact!("if {condition}:{}\n{}\nel{otherwise_code}", fmt_comment(stmt.info.comment.as_deref()), indent(&then_code)));
                         }
                         _ => {
-                            lines.push(format_compact!("if {}:{}\n{}\nelse:\n{}", condition, fmt_comment(stmt.info.comment.as_deref()), indent(&then_code), indent(&otherwise_code)));
+                            lines.push(format_compact!("if {condition}:{}\n{}\nelse:\n{}", fmt_comment(stmt.info.comment.as_deref()), indent(&then_code), indent(&otherwise_code)));
                         }
                     }
                 }
@@ -432,29 +432,29 @@ impl<'a> ScriptInfo<'a> {
                     lines.push(format_compact!("while True:{}\n{}", fmt_comment(stmt.info.comment.as_deref()), indent(&code)));
                 }
                 StmtKind::ForLoop { var, start, stop, stmts } => {
-                    let start = self.translate_expr(start)?.0;
-                    let stop = self.translate_expr(stop)?.0;
+                    let start = wrap_number(self.translate_expr(start)?, false);
+                    let stop = wrap_number(self.translate_expr(stop)?, false);
                     let code = self.translate_stmts(stmts)?;
-                    lines.push(format_compact!("for {} in snap.sxrange({}, {}):{}\n{}", var.trans_name, start, stop, fmt_comment(stmt.info.comment.as_deref()), indent(&code)));
+                    lines.push(format_compact!("for {} in snap.sxrange({start}, {stop}):{}\n{}", var.trans_name, fmt_comment(stmt.info.comment.as_deref()), indent(&code)));
                 }
                 StmtKind::ForeachLoop { var, items, stmts } => {
                     let items = wrap(self.translate_expr(items)?);
                     let code = self.translate_stmts(stmts)?;
-                    lines.push(format_compact!("for {} in {}:{}\n{}", var.trans_name, items, fmt_comment(stmt.info.comment.as_deref()), indent(&code)));
+                    lines.push(format_compact!("for {} in {items}:{}\n{}", var.trans_name, fmt_comment(stmt.info.comment.as_deref()), indent(&code)));
                 }
                 StmtKind::Repeat { times, stmts } => {
                     let times = wrap_number(self.translate_expr(times)?, true);
                     let code = self.translate_stmts(stmts)?;
-                    lines.push(format_compact!("for _ in range({}):{}\n{}", times, fmt_comment(stmt.info.comment.as_deref()), indent(&code)));
+                    lines.push(format_compact!("for _ in range({times}):{}\n{}", fmt_comment(stmt.info.comment.as_deref()), indent(&code)));
                 }
                 StmtKind::UntilLoop { condition, stmts } => {
                     let condition = wrap(self.translate_expr(condition)?);
                     let code = self.translate_stmts(stmts)?;
-                    lines.push(format_compact!("while not {}:{}\n{}", condition, fmt_comment(stmt.info.comment.as_deref()), indent(&code)));
+                    lines.push(format_compact!("while not {condition}:{}\n{}", fmt_comment(stmt.info.comment.as_deref()), indent(&code)));
                 }
                 StmtKind::SetCostume { costume } => {
                     let costume = self.translate_expr(costume)?.0;
-                    lines.push(format_compact!("self.costume = {}{}", costume, fmt_comment(stmt.info.comment.as_deref())));
+                    lines.push(format_compact!("self.costume = {costume}{}", fmt_comment(stmt.info.comment.as_deref())));
                 }
                 StmtKind::NextCostume => lines.push(format_compact!("self.costume = (self.costumes.index(self.costume, -1) + 1) % len(self.costumes)")),
                 StmtKind::PlaySound { sound, blocking } => {
