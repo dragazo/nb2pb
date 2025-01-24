@@ -539,8 +539,10 @@ def my_onstart_1(self):
     self.drawing = False
     globals.something = self.drawing
     self.pen_color = '#911a44'
-    self.pen_size += snap.wrap('17')
-    self.pen_size = snap.wrap('6')
+    self.pen_size += 17
+    self.pen_size = 6
+    self.pen_size += snap.wrap((str(snap.wrap('help'))))
+    self.pen_size = snap.wrap((str(snap.wrap('me'))))
     self.stamp()
     self.write(snap.wrap('test msg!!'), size = snap.wrap('7'))
     globals.something = Stage.get_drawings()
