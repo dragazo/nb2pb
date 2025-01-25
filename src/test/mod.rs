@@ -585,6 +585,22 @@ def my_onstart_1(self):
     globals.something = snap.wrap('hellohelpmeworld')
     globals.something = snap.wrap(f'hellohelp{globals.something}meworld')
     globals.something = snap.wrap(f"hellohelp{(snap.wrap('3') + snap.wrap('5'))}meworld")
+    globals.something = snap.wrap(f"hellohelp{(snap.wrap('3') + snap.wrap('{}') + snap.wrap('5'))}meworld")
+    globals.something = snap.wrap(f"h{{el}}lohelp{(snap.wrap('3') + snap.wrap('5'))}meworld")
+    globals.something = snap.wrap(f"hellohelp{(snap.wrap('3') + snap.wrap('5'))}me}}wor{{ld")
+    globals.something = snap.wrap(f"helloh{{elp}}{(snap.wrap('3') + snap.wrap('5'))}meworld")
+    globals.something = snap.wrap(f"hellohelp{(snap.wrap('3') + snap.wrap('5'))}m}}{{eworld")
+    globals.something = snap.wrap(f"he{{l}}loh{{el}}p{(snap.wrap('3') + snap.wrap('{}') + snap.wrap('5'))}{{me}}wo}}{{rld")
+    globals.something = snap.wrap('he{l}loh{el}p{}{me}wo}{rld')
+    globals.something = snap.wrap(f'hellohelp{globals.something}mehelp{globals.something}meworld')
+    globals.something = snap.wrap(f"hellohelp{(snap.wrap('3') + snap.wrap('5'))}mehelp{(snap.wrap('3') + snap.wrap('5'))}meworld")
+    globals.something = snap.wrap(f"hellohelp{(snap.wrap('3') + snap.wrap('{}') + snap.wrap('5'))}mehelp{(snap.wrap('3') + snap.wrap('{}') + snap.wrap('5'))}meworld")
+    globals.something = snap.wrap(f"h{{el}}lohelp{(snap.wrap('3') + snap.wrap('5'))}mehelp{(snap.wrap('3') + snap.wrap('5'))}meworld")
+    globals.something = snap.wrap(f"hellohelp{(snap.wrap('3') + snap.wrap('5'))}mehelp{(snap.wrap('3') + snap.wrap('5'))}me}}wor{{ld")
+    globals.something = snap.wrap(f"helloh{{elp}}{(snap.wrap('3') + snap.wrap('5'))}meh{{elp}}{(snap.wrap('3') + snap.wrap('5'))}meworld")
+    globals.something = snap.wrap(f"hellohelp{(snap.wrap('3') + snap.wrap('5'))}m}}{{ehelp{(snap.wrap('3') + snap.wrap('5'))}m}}{{eworld")
+    globals.something = snap.wrap(f"he{{l}}loh{{el}}p{(snap.wrap('3') + snap.wrap('{}') + snap.wrap('5'))}{{me}}h{{el}}p{(snap.wrap('3') + snap.wrap('{}') + snap.wrap('5'))}{{me}}wo}}{{rld")
+    globals.something = snap.wrap('he{l}loh{el}p{}{me}h{el}p{}{me}wo}{rld')
 "#.trim());
 }
 

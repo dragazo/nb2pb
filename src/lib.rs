@@ -335,13 +335,29 @@ impl<'a> ScriptInfo<'a> {
                     if s.starts_with('f') { s = &s[1..]; fmt_str = true; }
                     s.chars().next().filter(|&c| (c == '"' || c == '\'') && s.len() >= 2 && s.ends_with(c)).map(|_| (&s[1..s.len() - 1], fmt_str))
                 }
+                fn escape_braces(s: &str) -> CompactString {
+                    let mut res = CompactString::with_capacity(s.len());
+                    for c in s.chars() {
+                        res.push(c);
+                        if c == '{' || c == '}' { res.push(c); }
+                    }
+                    res
+                }
                 fn handle_segments(segments: Vec<(CompactString, Type)>) -> (CompactString, Type) {
                     let mut fmt_str = false;
                     let mut res = CompactString::default();
                     for segment in segments.iter() {
                         match as_str_lit(&segment.0) {
-                            Some(lit) => { res.push_str(lit.0); fmt_str |= lit.1; }
-                            None => { write!(res, "{{{}}}", segment.0).unwrap(); fmt_str = true; }
+                            Some(lit) => {
+                                if !fmt_str && lit.1 { res = escape_braces(&res) }
+                                fmt_str |= lit.1;
+                                if fmt_str && !lit.1 { res.push_str(&escape_braces(&lit.0)) } else { res.push_str(&lit.0) }
+                            }
+                            None => {
+                                if !fmt_str { res = escape_braces(&res) }
+                                fmt_str = true;
+                                write!(res, "{{{}}}", segment.0).unwrap();
+                            }
                         }
                     }
                     let quote_char = match (res.contains('\''), res.contains('"')) {
